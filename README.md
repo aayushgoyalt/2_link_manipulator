@@ -22,6 +22,8 @@ A modern, production-grade calculator application built with Electron, Vue 3, Ty
 - ⌫ Backspace to delete last digit
 - 🧹 Clear all functionality
 - 📊 Previous operation display
+- 📷 **Camera OCR** - Capture mathematical expressions with your camera
+- 🤖 **AI-Powered** - Uses Google Gemini to recognize handwritten math
 - 🎨 Modern, responsive UI with Tailwind CSS
 - ⚡ Fast and lightweight Electron app
 
@@ -70,6 +72,16 @@ Before you begin, ensure you have the following installed:
 2. **Install dependencies**
    ```bash
    npm install
+   ```
+
+3. **Configure API Keys** (Required for Camera OCR feature)
+   
+   See [SETUP.md](SETUP.md) for detailed instructions on configuring the Camera OCR feature.
+   
+   Quick setup:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your Gemini API key
    ```
 
 ## Development
@@ -169,6 +181,16 @@ The packaged application will be in the `dist` directory.
 - **Chain Operations**: Perform multiple operations in sequence
 - **Error Handling**: Division by zero shows "Error"
 
+### Camera OCR Feature
+
+1. **Enable Camera**: Click the camera icon in the calculator
+2. **Grant Permission**: Allow camera access when prompted
+3. **Capture Expression**: Position a mathematical expression in the camera view
+4. **Process**: The AI will recognize and extract the expression
+5. **Confirm**: Review and edit if needed, then calculate
+
+**Note**: Camera OCR requires a valid Google Gemini API key configured in your `.env` file.
+
 ### Example Calculations
 
 ```
@@ -178,6 +200,7 @@ Multiplication: 7 × 6 = 42
 Division:       20 ÷ 4 = 5
 Modulo:         17 % 5 = 2
 Chained:        5 + 3 × 2 = 16 (calculates left to right)
+Camera OCR:     Capture "2+3*4" → Calculates to 14
 ```
 
 ## Architecture
@@ -235,6 +258,13 @@ This separation ensures testability and maintainability.
 - Ensure all dependencies are installed: `npm install`
 - Check Node.js version: `node --version` (should be v18+)
 - Clear cache: `rm -rf node_modules && npm install`
+
+### Camera OCR not working
+- **API Key Error**: Make sure you've created a `.env` file with a valid `GEMINI_API_KEY`
+- **Camera Permission**: Grant camera access when prompted by your system
+- **macOS**: Go to System Preferences > Security & Privacy > Camera
+- **Windows**: Go to Settings > Privacy > Camera
+- **No Camera Found**: Ensure your device has a working camera
 
 ### Tailwind styles not working
 - Verify `style.css` is imported in `main.ts`
