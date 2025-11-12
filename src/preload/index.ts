@@ -292,11 +292,305 @@ const calculatorAPI = {
   }
 }
 
+// Permission Manager API types
+type OSPlatform = 'windows' | 'macos' | 'linux'
+type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unavailable'
+
+interface PlatformInstructions {
+  platform: OSPlatform
+  title: string
+  steps: string[]
+  settingsPath?: string
+  canAutoOpen: boolean
+}
+
+// Permission Manager API for renderer process
+const permissionAPI = {
+  // Get permission status
+  getStatus: async (): Promise<IPCResponse<PermissionStatus>> => {
+    try {
+      return await ipcRenderer.invoke('permission:get-status')
+    } catch (error) {
+      console.error('Permission API getStatus error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Get current platform
+  getPlatform: async (): Promise<IPCResponse<OSPlatform>> => {
+    try {
+      return await ipcRenderer.invoke('permission:get-platform')
+    } catch (error) {
+      console.error('Permission API getPlatform error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Get platform-specific instructions
+  getInstructions: async (platform: OSPlatform): Promise<IPCResponse<PlatformInstructions>> => {
+    try {
+      return await ipcRenderer.invoke('permission:get-instructions', platform)
+    } catch (error) {
+      console.error('Permission API getInstructions error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Open system settings
+  openSettings: async (platform: OSPlatform): Promise<IPCResponse<boolean>> => {
+    try {
+      return await ipcRenderer.invoke('permission:open-settings', platform)
+    } catch (error) {
+      console.error('Permission API openSettings error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  }
+}
+
+// Debug Logger API types
+interface TestResult {
+  component: string
+  success: boolean
+  duration: number
+  details: any
+  errors?: string[]
+  timestamp: number
+}
+
+// Debug Logger API for renderer process
+const debugAPI = {
+  // Enable debug mode
+  enable: async (): Promise<IPCResponse<void>> => {
+    try {
+      return await ipcRenderer.invoke('debug:enable')
+    } catch (error) {
+      console.error('Debug API enable error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Disable debug mode
+  disable: async (): Promise<IPCResponse<void>> => {
+    try {
+      return await ipcRenderer.invoke('debug:disable')
+    } catch (error) {
+      console.error('Debug API disable error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Test camera access
+  testCamera: async (): Promise<IPCResponse<TestResult>> => {
+    try {
+      return await ipcRenderer.invoke('debug:test-camera')
+    } catch (error) {
+      console.error('Debug API testCamera error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Test OCR processing
+  testOCR: async (imageData: string): Promise<IPCResponse<TestResult>> => {
+    try {
+      return await ipcRenderer.invoke('debug:test-ocr', imageData)
+    } catch (error) {
+      console.error('Debug API testOCR error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Export debug logs
+  exportLogs: async (): Promise<IPCResponse<string>> => {
+    try {
+      return await ipcRenderer.invoke('debug:export-logs')
+    } catch (error) {
+      console.error('Debug API exportLogs error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  }
+}
+
+// Image Upload API for renderer process
+const imageAPI = {
+  // Open file dialog to select image
+  openDialog: async (): Promise<IPCResponse<string | null>> => {
+    try {
+      return await ipcRenderer.invoke('image:open-dialog')
+    } catch (error) {
+      console.error('Image API openDialog error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Validate image file
+  validate: async (filePath: string): Promise<IPCResponse<{
+    isValid: boolean
+    errors: string[]
+    fileInfo?: {
+      size: number
+      format: string
+      dimensions: { width: number; height: number }
+      path: string
+    }
+  }>> => {
+    try {
+      return await ipcRenderer.invoke('image:validate', filePath)
+    } catch (error) {
+      console.error('Image API validate error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Read image as base64
+  readBase64: async (filePath: string): Promise<IPCResponse<string>> => {
+    try {
+      return await ipcRenderer.invoke('image:read-base64', filePath)
+    } catch (error) {
+      console.error('Image API readBase64 error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Get supported image formats
+  getSupportedFormats: async (): Promise<IPCResponse<string[]>> => {
+    try {
+      return await ipcRenderer.invoke('image:get-supported-formats')
+    } catch (error) {
+      console.error('Image API getSupportedFormats error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  }
+}
+
+// Test Utilities API for renderer process
+const testAPI = {
+  // Test camera access
+  cameraAccess: async (): Promise<IPCResponse<any>> => {
+    try {
+      return await ipcRenderer.invoke('test:camera-access')
+    } catch (error) {
+      console.error('Test API cameraAccess error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Test OCR pipeline
+  ocrPipeline: async (testImages?: string[]): Promise<IPCResponse<any>> => {
+    try {
+      return await ipcRenderer.invoke('test:ocr-pipeline', testImages)
+    } catch (error) {
+      console.error('Test API ocrPipeline error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Test calculator integration
+  calculatorIntegration: async (expression: string): Promise<IPCResponse<any>> => {
+    try {
+      return await ipcRenderer.invoke('test:calculator-integration', expression)
+    } catch (error) {
+      console.error('Test API calculatorIntegration error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Test error handling
+  errorHandling: async (): Promise<IPCResponse<any>> => {
+    try {
+      return await ipcRenderer.invoke('test:error-handling')
+    } catch (error) {
+      console.error('Test API errorHandling error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Run all tests
+  runAll: async (testImages?: string[]): Promise<IPCResponse<any>> => {
+    try {
+      return await ipcRenderer.invoke('test:run-all', testImages)
+    } catch (error) {
+      console.error('Test API runAll error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  },
+
+  // Generate test report
+  generateReport: async (results: any): Promise<IPCResponse<string>> => {
+    try {
+      return await ipcRenderer.invoke('test:generate-report', results)
+    } catch (error) {
+      console.error('Test API generateReport error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'IPC communication failed'
+      }
+    }
+  }
+}
+
 // Custom APIs for renderer
 const api = {
   history: historyAPI,
   camera: cameraAPI,
-  calculator: calculatorAPI
+  calculator: calculatorAPI,
+  image: imageAPI,
+  permission: permissionAPI,
+  debug: debugAPI,
+  test: testAPI
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
@@ -326,6 +620,8 @@ if (process.contextIsolated) {
       invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args)
     }
   }
+  // @ts-ignore (define in dts)
+  window.api = api
   // @ts-ignore (define in dts)
   window.api = api
 }

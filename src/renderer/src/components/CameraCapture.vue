@@ -16,7 +16,9 @@ import type {
   ProcessingError,
   CameraModalStep,
   Platform,
-  CameraPermissionState
+  CameraPermissionState,
+  OSPlatform,
+  PlatformInstructions
 } from '../types/camera-ocr';
 
 // Component props and emits
@@ -27,7 +29,7 @@ const props = withDefaults(defineProps<CameraUIProps>(), {
   config: undefined
 });
 
-const emit = defineEmits(['capture', 'close', 'error', 'retry', 'manualEdit', 'confirm']);
+const emit = defineEmits(['capture', 'upload', 'close', 'error', 'retry', 'manualEdit', 'confirm', 'expressionRecognized']);
 
 // Continuous scanning state
 const isContinuousMode = ref(true); // Enable continuous scanning by default
@@ -35,6 +37,12 @@ const scanInterval = ref<number | null>(null);
 const lastScanTime = ref(0);
 const SCAN_INTERVAL_MS = 2500; // Scan every 2.5 seconds
 const isScanning = ref(false);
+
+// Frame rate tracking for live feed
+const currentFrameRate = ref(0);
+const frameRateInterval = ref<number | null>(null);
+const frameCount = ref(0);
+const lastFrameRateUpdate = ref(0);
 
 // Platform detection
 const platform = ref<Platform>(RendererPlatformDetection.detectPlatform());
@@ -76,8 +84,6 @@ const canvasElement = ref<HTMLCanvasElement | null>(null);
 // UI state
 const isLoading = ref(false);
 const showPermissionHelp = ref(false);
-const allowManualEdit = ref(false);
-const editedExpression = ref('');
 
 // Error handling
 const currentError = ref<CameraError | ProcessingError | null>(null);
@@ -188,12 +194,22 @@ const requestCameraPermission = async () => {
     currentError.value = null;
 
     if (isElectron.value) {
-      // For Electron, use IPC to request permission from main process
+      // For Electron, check permission via IPC first, then use getUserMedia
       if (window.api?.camera) {
         const response = await window.api.camera.requestPermission();
         if (response.success && response.data) {
+          // Permission granted, now get the actual video stream
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: 'environment'
+            } 
+          });
+          
           permissionState.value.granted = true;
           cameraState.value.hasPermission = true;
+          videoStream.value = stream;
           await startCamera();
         } else {
           throw createCameraError(
@@ -224,6 +240,9 @@ const requestCameraPermission = async () => {
   } catch (error) {
     permissionState.value.denied = true;
     cameraState.value.hasPermission = false;
+    
+    // Load platform instructions for help window
+    platformInstructions.value = await getPlatformInstructions();
     
     if (error instanceof Error) {
       if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
@@ -260,33 +279,101 @@ const requestCameraPermission = async () => {
  */
 const startCamera = async () => {
   try {
+    if (!videoStream.value) {
+      throw new Error('Video stream not available');
+    }
+    
+    // Set step to preview to render the video element
     currentStep.value = 'preview';
     
-    if (isWeb.value && videoStream.value && videoElement.value) {
-      videoElement.value.srcObject = videoStream.value;
-      await videoElement.value.play();
-      cameraState.value.isActive = true;
-      
-      // Start continuous scanning if enabled
-      if (isContinuousMode.value) {
-        startContinuousScanning();
+    // Wait for Vue to render the video element
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    if (!videoElement.value) {
+      throw new Error('Video element not available after render');
+    }
+    
+    // Set video stream source
+    videoElement.value.srcObject = videoStream.value;
+    
+    // Wait for video to be ready before playing
+    await new Promise<void>((resolve, reject) => {
+      if (!videoElement.value) {
+        reject(new Error('Video element became null'));
+        return;
       }
-    } else if (isElectron.value) {
-      // For Electron, the camera stream will be handled by the main process
-      // We'll show a placeholder or use a different approach
-      cameraState.value.isActive = true;
       
-      // Start continuous scanning if enabled
-      if (isContinuousMode.value) {
-        startContinuousScanning();
-      }
+      const video = videoElement.value;
+      
+      video.onloadedmetadata = () => resolve();
+      video.onerror = (e) => {
+        console.error('Video load error:', e);
+        reject(new Error('Video failed to load'));
+      };
+      
+      // Timeout after 5 seconds
+      setTimeout(() => reject(new Error('Video load timeout')), 5000);
+    });
+    
+    await videoElement.value.play();
+    cameraState.value.isActive = true;
+    
+    // Start frame rate monitoring
+    startFrameRateMonitoring();
+    
+    // Start continuous scanning if enabled
+    if (isContinuousMode.value) {
+      startContinuousScanning();
     }
   } catch (error) {
+    console.error('Camera start error:', error);
     handleError(createCameraError(
       'capture-failed',
-      'Failed to start camera preview.',
+      `Failed to start camera preview: ${error instanceof Error ? error.message : 'Unknown error'}`,
       true
     ));
+  }
+};
+
+/**
+ * Start monitoring frame rate of video feed
+ */
+const startFrameRateMonitoring = () => {
+  if (frameRateInterval.value) return;
+  
+  lastFrameRateUpdate.value = Date.now();
+  frameCount.value = 0;
+  
+  frameRateInterval.value = window.setInterval(() => {
+    const now = Date.now();
+    const elapsed = (now - lastFrameRateUpdate.value) / 1000;
+    
+    if (elapsed > 0) {
+      currentFrameRate.value = Math.round(frameCount.value / elapsed);
+      frameCount.value = 0;
+      lastFrameRateUpdate.value = now;
+    }
+  }, 1000);
+  
+  // Count frames using requestAnimationFrame
+  const countFrame = () => {
+    if (cameraState.value.isActive && videoElement.value && !videoElement.value.paused) {
+      frameCount.value++;
+      requestAnimationFrame(countFrame);
+    }
+  };
+  requestAnimationFrame(countFrame);
+};
+
+/**
+ * Stop monitoring frame rate
+ */
+const stopFrameRateMonitoring = () => {
+  if (frameRateInterval.value) {
+    clearInterval(frameRateInterval.value);
+    frameRateInterval.value = null;
+    currentFrameRate.value = 0;
+    frameCount.value = 0;
   }
 };
 
@@ -295,8 +382,6 @@ const startCamera = async () => {
  */
 const startContinuousScanning = () => {
   if (scanInterval.value) return; // Already scanning
-  
-  console.log('Starting continuous OCR scanning...');
   
   scanInterval.value = window.setInterval(async () => {
     // Skip if already processing or not enough time has passed
@@ -317,7 +402,6 @@ const stopContinuousScanning = () => {
   if (scanInterval.value) {
     clearInterval(scanInterval.value);
     scanInterval.value = null;
-    console.log('Stopped continuous OCR scanning');
   }
 };
 
@@ -333,7 +417,8 @@ const performAutoScan = async () => {
     // Capture current frame without showing capture UI
     let imageData: string;
     
-    if (isWeb.value && videoElement.value && canvasElement.value) {
+    if (videoElement.value && canvasElement.value) {
+      // Capture from video element (works for both web and Electron)
       const canvas = canvasElement.value;
       const video = videoElement.value;
       const context = canvas.getContext('2d');
@@ -344,19 +429,8 @@ const performAutoScan = async () => {
       canvas.height = video.videoHeight;
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
       imageData = canvas.toDataURL('image/jpeg', 0.8);
-    } else if (isElectron.value) {
-      if (window.api?.camera) {
-        const response = await window.api.camera.captureImage();
-        if (response.success && response.data) {
-          imageData = response.data;
-        } else {
-          return; // Skip this scan
-        }
-      } else {
-        return;
-      }
     } else {
-      return;
+      return; // No video element available
     }
     
     // Process with OCR silently (don't show processing UI)
@@ -406,8 +480,8 @@ const captureImage = async () => {
     
     let imageData: string;
     
-    if (isWeb.value && videoElement.value && canvasElement.value) {
-      // Web browser: capture from video element
+    if (videoElement.value && canvasElement.value) {
+      // Capture from video element (works for both web and Electron)
       const canvas = canvasElement.value;
       const video = videoElement.value;
       const context = canvas.getContext('2d');
@@ -425,20 +499,8 @@ const captureImage = async () => {
       
       // Get image data as base64
       imageData = canvas.toDataURL('image/jpeg', 0.8);
-    } else if (isElectron.value) {
-      // Electron: use main process to capture
-      if (window.api?.camera) {
-        const response = await window.api.camera.captureImage();
-        if (response.success && response.data) {
-          imageData = response.data;
-        } else {
-          throw new Error(response.error || 'Failed to capture image from camera');
-        }
-      } else {
-        throw new Error('Camera API not available');
-      }
     } else {
-      throw new Error('Camera capture not supported on this platform');
+      throw new Error('Video element not available for capture');
     }
     
     capturedImage.value = imageData;
@@ -518,11 +580,10 @@ const startOCRProcessing = async (imageData: string) => {
 
 /**
  * Handle successful OCR processing completion
+ * Auto-confirms and closes modal (Requirement 4.1, 4.5)
  */
 const handleProcessingComplete = (result: ProcessingResult) => {
   recognizedExpression.value = result.recognizedExpression;
-  editedExpression.value = result.recognizedExpression;
-  currentStep.value = 'confirmation';
   
   processingState.value = {
     stage: 'complete',
@@ -530,6 +591,30 @@ const handleProcessingComplete = (result: ProcessingResult) => {
     currentOperation: 'Processing complete',
     result
   };
+  
+  // Auto-confirm and close modal (Requirement 4.1, 4.5)
+  const expression = result.recognizedExpression;
+  if (expression && expression.length > 0) {
+    // Emit expression directly to calculator
+    emit('confirm', expression);
+    emit('expressionRecognized', expression);
+    // Close modal after short delay to show success
+    setTimeout(() => {
+      closeModal();
+    }, 500);
+  } else {
+    // If no expression, show error
+    currentStep.value = 'error';
+    handleProcessingError({
+      type: 'parsing-failed',
+      message: 'No mathematical expression was recognized in the image',
+      stage: 'parsing',
+      recoverable: true,
+      retryable: true,
+      suggestedAction: 'Try capturing the image again with better lighting and positioning',
+      timestamp: Date.now()
+    });
+  }
 };
 
 /**
@@ -559,20 +644,114 @@ const handleProcessingError = (error: ProcessingError) => {
 };
 
 /**
- * Confirm recognized expression and proceed with calculation
+ * Handle image upload from file picker
  */
-const confirmExpression = () => {
-  const expression = allowManualEdit.value ? editedExpression.value : recognizedExpression.value;
-  emit('confirm', expression);
-  closeModal();
-};
-
-/**
- * Enable manual editing of recognized expression
- */
-const enableManualEdit = () => {
-  allowManualEdit.value = true;
-  editedExpression.value = recognizedExpression.value;
+const handleImageUpload = async () => {
+  try {
+    cameraState.value.isProcessing = true;
+    
+    if (isElectron.value && window.api?.image) {
+      // Use Electron IPC to open file dialog
+      const response = await window.api.image.openDialog();
+      if (response.success && response.data) {
+        const filePath = response.data;
+        
+        // Validate the image file
+        const validationResponse = await window.api.image.validate(filePath);
+        if (!validationResponse.success || !validationResponse.data?.isValid) {
+          throw new Error(validationResponse.data?.errors?.join(', ') || 'Invalid image file');
+        }
+        
+        // Read image as base64
+        const imageResponse = await window.api.image.readBase64(filePath);
+        if (imageResponse.success && imageResponse.data) {
+          const imageData = imageResponse.data;
+          capturedImage.value = imageData;
+          cameraState.value.lastCapturedImage = imageData;
+          
+          // Show preview briefly before processing
+          currentStep.value = 'capture';
+          
+          // Emit upload event
+          emit('upload', imageData);
+          
+          // Start OCR processing after brief delay to show preview
+          setTimeout(async () => {
+            await startOCRProcessing(imageData);
+          }, 300);
+        } else {
+          throw new Error(imageResponse.error || 'Failed to read image file');
+        }
+      } else {
+        // User cancelled the dialog
+        cameraState.value.isProcessing = false;
+      }
+    } else if (isWeb.value) {
+      // For web, use file input
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/png,image/jpeg,image/jpg,image/webp';
+      
+      input.onchange = async (e) => {
+        try {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (!file) {
+            cameraState.value.isProcessing = false;
+            return;
+          }
+          
+          // Validate file type
+          if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
+            throw new Error('Unsupported file format. Please use PNG, JPEG, or WEBP.');
+          }
+          
+          // Read file as base64
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            const imageData = event.target?.result as string;
+            capturedImage.value = imageData;
+            cameraState.value.lastCapturedImage = imageData;
+            
+            // Show preview briefly before processing
+            currentStep.value = 'capture';
+            
+            // Emit upload event
+            emit('upload', imageData);
+            
+            // Start OCR processing after brief delay to show preview
+            setTimeout(async () => {
+              await startOCRProcessing(imageData);
+            }, 300);
+          };
+          reader.onerror = () => {
+            throw new Error('Failed to read image file');
+          };
+          reader.readAsDataURL(file);
+        } catch (error) {
+          cameraState.value.isProcessing = false;
+          handleError(createCameraError(
+            'capture-failed',
+            error instanceof Error ? error.message : 'Failed to upload image',
+            true
+          ));
+        }
+      };
+      
+      // Handle cancel
+      input.oncancel = () => {
+        cameraState.value.isProcessing = false;
+      };
+      
+      input.click();
+    }
+  } catch (error) {
+    cameraState.value.isProcessing = false;
+    handleError(createCameraError(
+      'capture-failed',
+      error instanceof Error ? error.message : 'Failed to upload image',
+      true
+    ));
+  }
 };
 
 /**
@@ -622,15 +801,114 @@ const cancelProcessing = () => {
 /**
  * Open system settings for camera permissions
  */
-const openSystemSettings = () => {
-  // For web browsers, show instructions
-  showPermissionHelp.value = true;
-  
-  // On macOS, provide instructions to open System Preferences
-  if (isElectron.value) {
-    alert('Please open System Preferences > Security & Privacy > Camera to enable camera access for this application.');
+const openSystemSettings = async () => {
+  try {
+    if (isElectron.value && window.api?.permission) {
+      // Get platform-specific instructions
+      const platform = await detectOSPlatform();
+      
+      // Try to open system settings
+      const response = await window.api.permission.openSettings(platform);
+      if (!response.success) {
+        // If can't auto-open, show help window
+        showPermissionHelp.value = true;
+      }
+    } else {
+      // For web browsers, show instructions
+      showPermissionHelp.value = true;
+    }
+  } catch (error) {
+    console.error('Failed to open system settings:', error);
+    showPermissionHelp.value = true;
   }
 };
+
+/**
+ * Detect OS platform for permission instructions
+ */
+const detectOSPlatform = async (): Promise<OSPlatform> => {
+  if (isElectron.value && window.api?.permission) {
+    try {
+      const response = await window.api.permission.getPlatform();
+      if (response.success && response.data) {
+        return response.data as OSPlatform;
+      }
+    } catch (error) {
+      console.error('Failed to detect platform:', error);
+    }
+  }
+  
+  // Fallback detection
+  const userAgent = navigator.userAgent.toLowerCase();
+  if (userAgent.includes('mac')) return 'macos';
+  if (userAgent.includes('win')) return 'windows';
+  return 'linux';
+};
+
+/**
+ * Get platform-specific permission instructions
+ */
+const getPlatformInstructions = async (): Promise<PlatformInstructions | null> => {
+  try {
+    const platform = await detectOSPlatform();
+    
+    if (isElectron.value && window.api?.permission) {
+      const response = await window.api.permission.getInstructions(platform);
+      if (response.success && response.data) {
+        return response.data;
+      }
+    }
+    
+    // Fallback instructions
+    const instructions: Record<OSPlatform, PlatformInstructions> = {
+      macos: {
+        platform: 'macos',
+        title: 'Enable Camera Access on macOS',
+        steps: [
+          'Open System Preferences',
+          'Click on "Security & Privacy"',
+          'Select the "Camera" tab',
+          'Check the box next to this application',
+          'Restart the application if needed'
+        ],
+        settingsPath: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Camera',
+        canAutoOpen: true
+      },
+      windows: {
+        platform: 'windows',
+        title: 'Enable Camera Access on Windows',
+        steps: [
+          'Open Windows Settings',
+          'Go to Privacy > Camera',
+          'Turn on "Allow apps to access your camera"',
+          'Scroll down and enable access for this application',
+          'Restart the application if needed'
+        ],
+        settingsPath: 'ms-settings:privacy-webcam',
+        canAutoOpen: true
+      },
+      linux: {
+        platform: 'linux',
+        title: 'Enable Camera Access on Linux',
+        steps: [
+          'Check if your camera is detected: ls /dev/video*',
+          'Ensure your user is in the "video" group',
+          'Grant camera permissions to the application',
+          'Restart the application if needed'
+        ],
+        canAutoOpen: false
+      }
+    };
+    
+    return instructions[platform];
+  } catch (error) {
+    console.error('Failed to get platform instructions:', error);
+    return null;
+  }
+};
+
+// Platform instructions state
+const platformInstructions = ref<PlatformInstructions | null>(null);
 
 /**
  * Create a standardized camera error
@@ -675,6 +953,9 @@ const cleanup = async () => {
   // Stop continuous scanning
   stopContinuousScanning();
   
+  // Stop frame rate monitoring
+  stopFrameRateMonitoring();
+  
   if (videoStream.value) {
     videoStream.value.getTracks().forEach(track => track.stop());
     videoStream.value = null;
@@ -691,11 +972,11 @@ const cleanup = async () => {
   currentStep.value = 'permission';
   capturedImage.value = undefined;
   recognizedExpression.value = '';
-  editedExpression.value = '';
-  allowManualEdit.value = false;
   currentError.value = null;
   canRetry.value = false;
   isScanning.value = false;
+  showPermissionHelp.value = false;
+  platformInstructions.value = null;
   
   processingState.value = {
     stage: 'idle',
@@ -789,10 +1070,63 @@ onUnmounted(() => {
           <div v-if="permissionState.denied" class="mt-4 p-3 bg-red-900/50 border border-red-700 rounded-lg">
             <p class="text-red-300 text-sm mb-2">Camera permission was denied.</p>
             <button
-              @click="openSystemSettings"
+              @click="showPermissionHelp = true"
               class="text-red-400 hover:text-red-300 text-sm underline"
             >
-              Open settings to enable camera access
+              Show help to enable camera access
+            </button>
+          </div>
+        </div>
+
+        <!-- Permission Help Window (Requirement 9.1-9.5) -->
+        <div v-if="showPermissionHelp" class="text-center">
+          <div class="mb-6">
+            <div class="w-16 h-16 mx-auto mb-4 bg-yellow-600 rounded-full flex items-center justify-center">
+              <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 class="text-lg font-medium text-white mb-2">{{ platformInstructions?.title || 'Camera Permission Help' }}</h3>
+            <p class="text-gray-300 mb-4">
+              Follow these steps to enable camera access:
+            </p>
+            
+            <!-- Platform-specific instructions -->
+            <div class="text-left text-sm text-gray-300 mb-4 p-4 bg-slate-700 rounded-lg">
+              <ol class="list-decimal list-inside space-y-2">
+                <li v-for="(step, index) in platformInstructions?.steps" :key="index">{{ step }}</li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="flex gap-3 justify-center flex-wrap">
+            <button
+              v-if="platformInstructions?.canAutoOpen"
+              @click="openSystemSettings"
+              class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
+            >
+              Open System Settings
+            </button>
+            
+            <button
+              @click="retryOperation"
+              class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors duration-200"
+            >
+              Retry
+            </button>
+            
+            <button
+              @click="handleImageUpload"
+              class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors duration-200"
+            >
+              Upload Image Instead
+            </button>
+            
+            <button
+              @click="showPermissionHelp = false; closeModal()"
+              class="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors duration-200"
+            >
+              Cancel
             </button>
           </div>
         </div>
@@ -800,47 +1134,53 @@ onUnmounted(() => {
         <!-- Camera Preview Step -->
         <div v-if="currentStep === 'preview'" class="text-center">
           <div class="relative mb-4 bg-black rounded-lg overflow-hidden">
-            <!-- Web camera preview -->
+            <!-- Camera preview (works for both Web and Electron) -->
             <video
-              v-if="isWeb"
               ref="videoElement"
               autoplay
               playsinline
               muted
-              class="w-full h-64 object-cover"
+              class="w-full h-80 object-cover"
             />
-            
-            <!-- Electron camera placeholder -->
-            <div
-              v-if="isElectron"
-              class="w-full h-64 flex items-center justify-center bg-gray-800"
-            >
-              <div class="text-center">
-                <svg class="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <p class="text-gray-400 text-sm">Camera Ready</p>
+
+            <!-- Visual guides for positioning math expressions (Requirement 1.2) -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <!-- Corner guides -->
+              <div class="relative w-4/5 h-3/4">
+                <!-- Top-left corner -->
+                <div class="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-blue-400"></div>
+                <!-- Top-right corner -->
+                <div class="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-blue-400"></div>
+                <!-- Bottom-left corner -->
+                <div class="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-blue-400"></div>
+                <!-- Bottom-right corner -->
+                <div class="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-blue-400"></div>
+                
+                <!-- Center guide text -->
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <p class="text-white text-sm bg-black bg-opacity-60 px-3 py-1.5 rounded-lg">
+                    Position math expression here
+                  </p>
+                </div>
               </div>
             </div>
-
-            <!-- Capture overlay -->
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div class="border-2 border-white border-dashed rounded-lg w-3/4 h-3/4 flex items-center justify-center">
-                <p class="text-white text-sm bg-black bg-opacity-50 px-2 py-1 rounded">
-                  Position math expression here
-                </p>
-              </div>
+            
+            <!-- Frame rate indicator (Requirement 1.4) -->
+            <div class="absolute top-2 left-2 flex items-center gap-2 bg-black bg-opacity-70 px-3 py-1.5 rounded-full">
+              <svg class="w-3 h-3 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                <circle cx="10" cy="10" r="8" />
+              </svg>
+              <span class="text-white text-xs font-medium">{{ currentFrameRate }} FPS</span>
             </div>
             
             <!-- Scanning indicator -->
-            <div v-if="isContinuousMode" class="absolute top-2 right-2 flex items-center gap-2 bg-black bg-opacity-70 px-3 py-1 rounded-full">
+            <div v-if="isContinuousMode" class="absolute top-2 right-2 flex items-center gap-2 bg-black bg-opacity-70 px-3 py-1.5 rounded-full">
               <div class="w-2 h-2 rounded-full" :class="isScanning ? 'bg-green-500 animate-pulse' : 'bg-gray-400'"></div>
               <span class="text-white text-xs">{{ isScanning ? 'Scanning...' : 'Live OCR' }}</span>
             </div>
           </div>
 
-          <div class="flex gap-3 justify-center">
+          <div class="flex gap-3 justify-center flex-wrap">
             <button
               @click="captureImage"
               :disabled="!canCapture"
@@ -853,11 +1193,38 @@ onUnmounted(() => {
             </button>
             
             <button
+              @click="handleImageUpload"
+              class="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors duration-200 flex items-center gap-2"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Upload Image
+            </button>
+            
+            <button
               @click="closeModal"
               class="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors duration-200"
             >
               Cancel
             </button>
+          </div>
+        </div>
+
+        <!-- Capture Step (shows uploaded/captured image preview) -->
+        <div v-if="currentStep === 'capture'" class="text-center">
+          <div class="mb-6">
+            <!-- Captured/uploaded image preview -->
+            <div v-if="capturedImage" class="mb-4">
+              <img
+                :src="capturedImage"
+                alt="Selected image"
+                class="w-full max-w-md mx-auto rounded-lg border border-slate-600"
+              />
+            </div>
+
+            <h3 class="text-lg font-medium text-white mb-2">Image Selected</h3>
+            <p class="text-gray-300 mb-4">Processing will begin shortly...</p>
           </div>
         </div>
 
@@ -904,87 +1271,6 @@ onUnmounted(() => {
           >
             Cancel
           </button>
-        </div>
-
-        <!-- Confirmation Step -->
-        <div v-if="currentStep === 'confirmation'" class="text-center">
-          <div class="mb-6">
-            <!-- Captured image preview -->
-            <div v-if="capturedImage" class="mb-4">
-              <img
-                :src="capturedImage"
-                alt="Captured expression"
-                class="w-full max-w-md mx-auto rounded-lg border border-slate-600"
-              />
-            </div>
-
-            <h3 class="text-lg font-medium text-white mb-4">Expression Recognized</h3>
-            
-            <!-- Expression display/edit -->
-            <div class="mb-4">
-              <div v-if="!allowManualEdit" class="p-4 bg-slate-700 rounded-lg">
-                <p class="text-xl font-mono text-white mb-2">{{ recognizedExpression }}</p>
-                <button
-                  @click="enableManualEdit"
-                  class="text-blue-400 hover:text-blue-300 text-sm underline"
-                >
-                  Edit expression
-                </button>
-              </div>
-              
-              <div v-else class="p-4 bg-slate-700 rounded-lg">
-                <input
-                  v-model="editedExpression"
-                  type="text"
-                  class="w-full p-2 bg-slate-600 text-white rounded border border-slate-500 focus:border-blue-500 focus:outline-none font-mono text-lg text-center"
-                  placeholder="Enter mathematical expression"
-                />
-                <p class="text-xs text-gray-400 mt-2">Edit the expression if needed</p>
-              </div>
-            </div>
-
-            <!-- Confidence indicator -->
-            <div v-if="processingState.result?.confidence" class="mb-4">
-              <div class="flex items-center justify-center gap-2 text-sm text-gray-400">
-                <span>Confidence:</span>
-                <div class="flex items-center gap-1">
-                  <div class="w-20 bg-slate-700 rounded-full h-2">
-                    <div
-                      class="bg-green-500 h-2 rounded-full"
-                      :style="{ width: `${processingState.result.confidence * 100}%` }"
-                    ></div>
-                  </div>
-                  <span>{{ Math.round(processingState.result.confidence * 100) }}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex gap-3 justify-center">
-            <button
-              @click="confirmExpression"
-              class="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors duration-200 flex items-center gap-2"
-            >
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
-              Calculate
-            </button>
-            
-            <button
-              @click="currentStep = 'preview'"
-              class="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors duration-200"
-            >
-              Retake
-            </button>
-            
-            <button
-              @click="closeModal"
-              class="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors duration-200"
-            >
-              Cancel
-            </button>
-          </div>
         </div>
 
         <!-- Error Step -->

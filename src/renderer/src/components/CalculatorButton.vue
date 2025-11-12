@@ -23,7 +23,7 @@ const emit = defineEmits<Emits>();
  * Get button styling based on variant type
  */
 const buttonClasses = (variant: string) => {
-  const baseClasses = 'text-2xl font-medium rounded-xl transition-all duration-150 active:scale-95 hover:opacity-90';
+  const baseClasses = 'text-xl font-medium rounded-lg transition-all duration-150 active:scale-95 hover:opacity-90';
   
   const variantClasses = {
     number: 'bg-gray-700 text-white hover:bg-gray-600',
@@ -45,7 +45,7 @@ const handleClick = () => {
   <button
     :class="buttonClasses(variant)"
     @click="handleClick"
-    class="aspect-square w-full flex items-center justify-center"
+    class="w-full py-3 text-lg font-medium rounded-md transition-all duration-150 active:scale-95 hover:opacity-90 flex items-center justify-center select-none"
   >
     {{ label }}
   </button>

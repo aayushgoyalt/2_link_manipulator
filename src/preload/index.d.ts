@@ -95,6 +95,113 @@ interface ExtendedElectronAPI extends ElectronAPI {
   }
 }
 
+// Image Upload API types
+interface ImageValidationResult {
+  isValid: boolean
+  errors: string[]
+  fileInfo?: {
+    size: number
+    format: string
+    dimensions: { width: number; height: number }
+    path: string
+  }
+}
+
+interface ImageAPI {
+  openDialog: () => Promise<IPCResponse<string | null>>
+  validate: (filePath: string) => Promise<IPCResponse<ImageValidationResult>>
+  readBase64: (filePath: string) => Promise<IPCResponse<string>>
+  getSupportedFormats: () => Promise<IPCResponse<string[]>>
+}
+
+// Permission Manager API types
+type OSPlatform = 'windows' | 'macos' | 'linux'
+type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unavailable'
+
+interface PlatformInstructions {
+  platform: OSPlatform
+  title: string
+  steps: string[]
+  settingsPath?: string
+  canAutoOpen: boolean
+}
+
+interface PermissionAPI {
+  getStatus: () => Promise<IPCResponse<PermissionStatus>>
+  getPlatform: () => Promise<IPCResponse<OSPlatform>>
+  getInstructions: (platform: OSPlatform) => Promise<IPCResponse<PlatformInstructions>>
+  openSettings: (platform: OSPlatform) => Promise<IPCResponse<boolean>>
+}
+
+// Debug Logger API types
+interface TestResult {
+  component: string
+  success: boolean
+  duration: number
+  details: any
+  errors?: string[]
+  timestamp: number
+}
+
+interface CameraAccessTestResult extends TestResult {
+  permissionStatus?: string
+  deviceCount?: number
+  deviceDetails?: Array<{
+    deviceId: string
+    label: string
+    capabilities?: MediaTrackCapabilities
+  }>
+}
+
+interface OCRPipelineTestResult extends TestResult {
+  recognizedExpression?: string
+  confidence?: number
+  processingStages?: Array<{
+    stage: string
+    duration: number
+    success: boolean
+  }>
+}
+
+interface CalculatorIntegrationTestResult extends TestResult {
+  expressionInserted?: boolean
+  calculatorFocused?: boolean
+  userCanSolve?: boolean
+}
+
+interface ErrorHandlingTestResult extends TestResult {
+  errorType?: string
+  errorHandled?: boolean
+  recoveryAttempted?: boolean
+  userFeedbackProvided?: boolean
+}
+
+interface AllTestResults {
+  cameraAccess: CameraAccessTestResult
+  ocrPipeline: OCRPipelineTestResult
+  calculatorIntegration: CalculatorIntegrationTestResult
+  errorHandling: ErrorHandlingTestResult
+  overallSuccess: boolean
+}
+
+interface DebugAPI {
+  enable: () => Promise<IPCResponse<void>>
+  disable: () => Promise<IPCResponse<void>>
+  testCamera: () => Promise<IPCResponse<TestResult>>
+  testOCR: (imageData: string) => Promise<IPCResponse<TestResult>>
+  exportLogs: () => Promise<IPCResponse<string>>
+}
+
+// Test Utilities API types
+interface TestAPI {
+  cameraAccess: () => Promise<IPCResponse<CameraAccessTestResult>>
+  ocrPipeline: (testImages?: string[]) => Promise<IPCResponse<OCRPipelineTestResult>>
+  calculatorIntegration: (expression: string) => Promise<IPCResponse<CalculatorIntegrationTestResult>>
+  errorHandling: () => Promise<IPCResponse<ErrorHandlingTestResult>>
+  runAll: (testImages?: string[]) => Promise<IPCResponse<AllTestResults>>
+  generateReport: (results: AllTestResults) => Promise<IPCResponse<string>>
+}
+
 declare global {
   interface Window {
     electron: ExtendedElectronAPI
@@ -102,6 +209,10 @@ declare global {
       history: HistoryAPI
       camera: CameraAPI
       calculator: CalculatorAPI
+      image: ImageAPI
+      permission: PermissionAPI
+      debug: DebugAPI
+      test: TestAPI
     }
   }
 }

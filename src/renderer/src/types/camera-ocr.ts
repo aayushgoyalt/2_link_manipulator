@@ -34,6 +34,11 @@ export interface CameraState {
   lastCapturedImage?: string;
   error?: CameraError;
   capabilities?: CameraCapabilities;
+  // Live feed support
+  isLiveFeedActive?: boolean;
+  currentFrameRate?: number;
+  targetFrameRate?: number;
+  videoStream?: MediaStream;
 }
 
 export type LLMProvider = 'gemini' | 'openai' | 'claude';
@@ -120,6 +125,7 @@ export interface CameraOCRConfig {
   camera: CameraConfig;
   processing: ProcessingConfig;
   ui: UIConfig;
+  debug?: DebugConfig;
 }
 
 export interface CameraConfig {
@@ -193,6 +199,20 @@ export interface CameraOCRIPCChannels {
   'camera:get-config': () => void;
   'camera:update-config': (config: Partial<CameraOCRConfig>) => void;
   'camera:get-capabilities': () => void;
+  // Permission manager IPC
+  'permission:get-status': () => void;
+  'permission:get-instructions': (platform: OSPlatform) => void;
+  'permission:open-settings': (platform: OSPlatform) => void;
+  // Image upload IPC
+  'image:open-dialog': () => void;
+  'image:validate': (filePath: string) => void;
+  'image:read-base64': (filePath: string) => void;
+  // Debug logger IPC
+  'debug:enable': () => void;
+  'debug:disable': () => void;
+  'debug:test-camera': () => void;
+  'debug:test-ocr': (imageData: string) => void;
+  'debug:export-logs': () => void;
 }
 
 export interface CameraOCRIPCResponses {
@@ -203,6 +223,16 @@ export interface CameraOCRIPCResponses {
   'camera:processing-error': (error: ProcessingError) => void;
   'camera:config-updated': (config: CameraOCRConfig) => void;
   'camera:capabilities-result': (capabilities: CameraCapabilities) => void;
+  // Permission manager responses
+  'permission:status-result': (status: PermissionStatus) => void;
+  'permission:instructions-result': (instructions: PlatformInstructions) => void;
+  // Image upload responses
+  'image:dialog-result': (filePath: string | null) => void;
+  'image:validation-result': (result: ImageValidationResult) => void;
+  'image:base64-result': (data: string) => void;
+  // Debug logger responses
+  'debug:test-result': (result: TestResult) => void;
+  'debug:logs-exported': (path: string) => void;
 }
 
 // UI Component types specific to renderer
@@ -215,11 +245,14 @@ export interface CameraUIProps {
 
 export interface CameraUIEmits {
   capture: (imageData: string) => void;
+  upload: (imageData: string) => void;
   close: () => void;
   error: (error: CameraError) => void;
   retry: () => void;
   manualEdit: (expression: string) => void;
   confirm: (expression: string) => void;
+  expressionRecognized: (expression: string) => void;
+  openPermissionHelp: () => void;
 }
 
 export interface CameraPreviewProps {
@@ -270,6 +303,7 @@ export interface CameraModalState {
 
 export type CameraModalStep = 
   | 'permission'
+  | 'permission-help'
   | 'preview'
   | 'capture'
   | 'processing'
@@ -310,6 +344,32 @@ export interface PermissionRequestProps {
 export interface PermissionRequestEmits {
   requestPermission: () => void;
   openSettings: () => void;
+  cancel: () => void;
+}
+
+// Permission help window component types
+export interface PermissionHelpProps {
+  instructions: PlatformInstructions;
+  permissionStatus: PermissionStatus;
+}
+
+export interface PermissionHelpEmits {
+  openSettings: () => void;
+  retry: () => void;
+  cancel: () => void;
+  useUpload: () => void;
+}
+
+// Image upload component types
+export interface ImageUploadProps {
+  supportedFormats: string[];
+  maxFileSize?: number;
+  isProcessing?: boolean;
+}
+
+export interface ImageUploadEmits {
+  upload: (imageData: string) => void;
+  error: (error: CameraError) => void;
   cancel: () => void;
 }
 
@@ -417,4 +477,83 @@ export interface CameraValidationWarning {
   field: string;
   message: string;
   code: string;
+}
+
+// Permission Manager types
+export type OSPlatform = 'windows' | 'macos' | 'linux';
+
+export type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unavailable';
+
+export interface PlatformInstructions {
+  platform: OSPlatform;
+  title: string;
+  steps: string[];
+  settingsPath?: string;
+  canAutoOpen: boolean;
+}
+
+export interface PermissionResult {
+  granted: boolean;
+  status: PermissionStatus;
+  error?: string;
+  platformInstructions?: PlatformInstructions;
+}
+
+// Image Upload Handler types
+export interface ImageValidationResult {
+  isValid: boolean;
+  errors: string[];
+  fileInfo?: ImageFileInfo;
+}
+
+export interface ImageFileInfo {
+  size: number;
+  format: string;
+  dimensions: { width: number; height: number };
+  path: string;
+}
+
+export const SUPPORTED_IMAGE_FORMATS = [
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp'
+] as const;
+
+export type SupportedImageFormat = typeof SUPPORTED_IMAGE_FORMATS[number];
+
+// Debug Logger types
+export interface TestResult {
+  component: string;
+  success: boolean;
+  duration: number;
+  details: any;
+  errors?: string[];
+  timestamp: number;
+}
+
+export interface DebugSession {
+  sessionId: string;
+  timestamp: number;
+  logs: DebugLog[];
+  capturedImages: string[];
+  ocrResults: ProcessingResult[];
+}
+
+export interface DebugLog {
+  timestamp: number;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  component: string;
+  operation: string;
+  data: any;
+  error?: Error;
+}
+
+export interface DebugConfig {
+  enabled: boolean;
+  logLevel: 'info' | 'debug' | 'warn' | 'error';
+  saveImages: boolean;
+  saveResults: boolean;
+  maxLogSize: number;
+  debugFolder?: string;
 }

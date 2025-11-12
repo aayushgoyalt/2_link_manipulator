@@ -96,6 +96,11 @@ export interface CameraState {
   lastCapturedImage?: string;
   error?: CameraError;
   capabilities?: CameraCapabilities;
+  // Live feed support
+  isLiveFeedActive?: boolean;
+  currentFrameRate?: number;
+  targetFrameRate?: number;
+  videoStream?: MediaStream;
 }
 
 export type CameraErrorType = 

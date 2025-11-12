@@ -4,15 +4,18 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { historyService } from './services/HistoryService'
 import { CameraServiceFactory } from './services/CameraServiceFactory'
+import { PermissionManager } from './services/PermissionManager'
+import { ImageUploadHandler } from './services/ImageUploadHandler'
+import { createDebugLogger } from './services/DebugLoggerService'
 import type { CalculationRecord } from './types/calculator'
 
 function createWindow(): void {
   // Create the browser window with calculator-optimized dimensions
   const mainWindow = new BrowserWindow({
-    width: 700,
-    height: 650,
-    minWidth: 700,
-    minHeight: 550,
+    width: 1200,
+    height: 900,
+    minWidth: 1000,
+    minHeight: 800,
     show: false,
     autoHideMenuBar: true,
     resizable: true,
@@ -75,6 +78,9 @@ app.whenReady().then(async () => {
   setupHistoryIPC()
   setupCameraIPC()
   setupCalculatorOCRIPC()
+  setupPermissionIPC()
+  setupImageUploadIPC()
+  setupDebugLoggerIPC()
 
   createWindow()
 
@@ -340,6 +346,126 @@ function setupCameraIPC(): void {
     }
   });
 
+  // Handle camera:check-permission-status - Check permission status before requesting
+  ipcMain.handle('camera:check-permission-status', async (_event) => {
+    try {
+      const service = getCameraService();
+      const status = await service.checkPermissionStatus();
+      return { success: true, data: status };
+    } catch (error) {
+      console.error('IPC camera:check-permission-status error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to check permission status'
+      };
+    }
+  });
+
+  // Handle camera:check-permission - Alias for camera:check-permission-status
+  ipcMain.handle('camera:check-permission', async (_event) => {
+    try {
+      const service = getCameraService();
+      const status = await service.checkPermissionStatus();
+      return { success: true, data: status };
+    } catch (error) {
+      console.error('IPC camera:check-permission error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to check permission'
+      };
+    }
+  });
+
+  // Handle camera:retry-permission - Retry permission after user grants it
+  ipcMain.handle('camera:retry-permission', async (_event) => {
+    try {
+      const service = getCameraService();
+      const granted = await service.retryPermissionAfterGrant();
+      return { success: true, data: granted };
+    } catch (error) {
+      console.error('IPC camera:retry-permission error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to retry permission'
+      };
+    }
+  });
+
+  // Handle camera:open-system-settings - Open system settings for camera permissions
+  ipcMain.handle('camera:open-system-settings', async (_event) => {
+    try {
+      const service = getCameraService();
+      service.openSystemSettings();
+      return { success: true };
+    } catch (error) {
+      console.error('IPC camera:open-system-settings error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to open system settings'
+      };
+    }
+  });
+
+  // Handle camera:initialize-live-stream - Initialize live video stream
+  ipcMain.handle('camera:initialize-live-stream', async (_event) => {
+    try {
+      const service = getCameraService();
+      const result = await service.initializeLiveStream();
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('IPC camera:initialize-live-stream error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to initialize live stream'
+      };
+    }
+  });
+
+  // Handle camera:get-video-constraints - Get video constraints for live feed
+  ipcMain.handle('camera:get-video-constraints', async (_event) => {
+    try {
+      const service = getCameraService();
+      const constraints = service.getVideoConstraints();
+      return { success: true, data: constraints };
+    } catch (error) {
+      console.error('IPC camera:get-video-constraints error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get video constraints'
+      };
+    }
+  });
+
+  // Handle camera:capture-frame - Capture frame from live video stream
+  ipcMain.handle('camera:capture-frame', async (_event, imageData: string) => {
+    try {
+      const service = getCameraService();
+      const capturedImage = await service.captureFrameFromStream(imageData);
+      return { success: true, data: capturedImage };
+    } catch (error) {
+      console.error('IPC camera:capture-frame error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to capture frame'
+      };
+    }
+  });
+
+  // Handle camera:stop-video-stream - Stop video stream
+  ipcMain.handle('camera:stop-video-stream', async (_event) => {
+    try {
+      const service = getCameraService();
+      await service.stopVideoStream();
+      return { success: true };
+    } catch (error) {
+      console.error('IPC camera:stop-video-stream error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to stop video stream'
+      };
+    }
+  });
+
   // Handle camera:get-platform-info - Get platform detection information
   ipcMain.handle('camera:get-platform-info', async (_event) => {
     try {
@@ -362,6 +488,129 @@ function setupCameraIPC(): void {
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to get platform information'
+      };
+    }
+  });
+}
+
+// Permission Manager IPC handlers
+function setupPermissionIPC(): void {
+  const permissionManager = PermissionManager.getInstance();
+
+  // Handle permission:get-status - Get current permission status
+  ipcMain.handle('permission:get-status', async (_event) => {
+    try {
+      const platform = permissionManager.detectOS();
+      const status = await permissionManager.getPermissionStatus(platform);
+      return { success: true, data: status };
+    } catch (error) {
+      console.error('IPC permission:get-status error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get permission status'
+      };
+    }
+  });
+
+  // Handle permission:get-platform - Get current platform
+  ipcMain.handle('permission:get-platform', async (_event) => {
+    try {
+      const platform = permissionManager.detectOS();
+      return { success: true, data: platform };
+    } catch (error) {
+      console.error('IPC permission:get-platform error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get platform'
+      };
+    }
+  });
+
+  // Handle permission:get-instructions - Get platform-specific instructions
+  ipcMain.handle('permission:get-instructions', async (_event, platform: string) => {
+    try {
+      const instructions = permissionManager.getPlatformInstructions(platform as any);
+      return { success: true, data: instructions };
+    } catch (error) {
+      console.error('IPC permission:get-instructions error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get platform instructions'
+      };
+    }
+  });
+
+  // Handle permission:open-settings - Open system settings
+  ipcMain.handle('permission:open-settings', async (_event, platform: string) => {
+    try {
+      permissionManager.openSystemSettings(platform as any);
+      return { success: true, data: true };
+    } catch (error) {
+      console.error('IPC permission:open-settings error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to open system settings'
+      };
+    }
+  });
+}
+
+// Image Upload IPC handlers
+function setupImageUploadIPC(): void {
+  const imageUploadHandler = ImageUploadHandler.getInstance();
+
+  // Handle image:open-dialog - Open file picker dialog
+  ipcMain.handle('image:open-dialog', async (_event) => {
+    try {
+      const filePath = await imageUploadHandler.openFileDialog();
+      return { success: true, data: filePath };
+    } catch (error) {
+      console.error('IPC image:open-dialog error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to open file dialog'
+      };
+    }
+  });
+
+  // Handle image:validate - Validate image file
+  ipcMain.handle('image:validate', async (_event, filePath: string) => {
+    try {
+      const validationResult = await imageUploadHandler.validateImageFile(filePath);
+      return { success: true, data: validationResult };
+    } catch (error) {
+      console.error('IPC image:validate error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to validate image file'
+      };
+    }
+  });
+
+  // Handle image:read-base64 - Read image as base64
+  ipcMain.handle('image:read-base64', async (_event, filePath: string) => {
+    try {
+      const base64Data = await imageUploadHandler.readImageAsBase64(filePath);
+      return { success: true, data: base64Data };
+    } catch (error) {
+      console.error('IPC image:read-base64 error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to read image file'
+      };
+    }
+  });
+
+  // Handle image:get-supported-formats - Get supported image formats
+  ipcMain.handle('image:get-supported-formats', async (_event) => {
+    try {
+      const formats = imageUploadHandler.getSupportedFormats();
+      return { success: true, data: formats };
+    } catch (error) {
+      console.error('IPC image:get-supported-formats error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get supported formats'
       };
     }
   });
@@ -483,6 +732,334 @@ function setupCalculatorOCRIPC(): void {
 }
 
 
+
+// Debug Logger IPC handlers
+function setupDebugLoggerIPC(): void {
+  let debugLogger: any = null;
+
+  // Initialize debug logger lazily
+  const getDebugLogger = () => {
+    if (!debugLogger) {
+      debugLogger = createDebugLogger();
+    }
+    return debugLogger;
+  };
+
+  // Handle debug:enable - Enable debug mode
+  ipcMain.handle('debug:enable', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      logger.enableDebugMode();
+      return { success: true };
+    } catch (error) {
+      console.error('IPC debug:enable error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to enable debug mode'
+      };
+    }
+  });
+
+  // Handle debug:disable - Disable debug mode
+  ipcMain.handle('debug:disable', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      logger.disableDebugMode();
+      return { success: true };
+    } catch (error) {
+      console.error('IPC debug:disable error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to disable debug mode'
+      };
+    }
+  });
+
+  // Handle debug:is-enabled - Check if debug mode is enabled
+  ipcMain.handle('debug:is-enabled', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      const isEnabled = logger.isDebugMode();
+      return { success: true, data: isEnabled };
+    } catch (error) {
+      console.error('IPC debug:is-enabled error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to check debug mode'
+      };
+    }
+  });
+
+  // Handle debug:test-camera - Test camera access
+  ipcMain.handle('debug:test-camera', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      const result = await logger.testCameraAccess();
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('IPC debug:test-camera error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to test camera access'
+      };
+    }
+  });
+
+  // Handle debug:test-image-capture - Test image capture
+  ipcMain.handle('debug:test-image-capture', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      const result = await logger.testImageCapture();
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('IPC debug:test-image-capture error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to test image capture'
+      };
+    }
+  });
+
+  // Handle debug:test-ocr - Test OCR processing
+  ipcMain.handle('debug:test-ocr', async (_event, imageData: string) => {
+    try {
+      const logger = getDebugLogger();
+      const result = await logger.testOCRProcessing(imageData);
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('IPC debug:test-ocr error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to test OCR processing'
+      };
+    }
+  });
+
+  // Handle debug:test-calculator - Test calculator integration
+  ipcMain.handle('debug:test-calculator', async (_event, expression: string) => {
+    try {
+      const logger = getDebugLogger();
+      const result = await logger.testCalculatorIntegration(expression);
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('IPC debug:test-calculator error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to test calculator integration'
+      };
+    }
+  });
+
+  // Handle debug:export-logs - Export debug logs
+  ipcMain.handle('debug:export-logs', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      const filepath = await logger.exportDebugLogs();
+      return { success: true, data: filepath };
+    } catch (error) {
+      console.error('IPC debug:export-logs error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to export debug logs'
+      };
+    }
+  });
+
+  // Handle debug:get-logs - Get all logs
+  ipcMain.handle('debug:get-logs', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      const logs = logger.getLogs();
+      return { success: true, data: logs };
+    } catch (error) {
+      console.error('IPC debug:get-logs error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get logs'
+      };
+    }
+  });
+
+  // Handle debug:clear-logs - Clear all logs
+  ipcMain.handle('debug:clear-logs', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      logger.clearLogs();
+      return { success: true };
+    } catch (error) {
+      console.error('IPC debug:clear-logs error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to clear logs'
+      };
+    }
+  });
+
+  // Handle debug:save-session - Save debug session
+  ipcMain.handle('debug:save-session', async (_event, sessionId: string) => {
+    try {
+      const logger = getDebugLogger();
+      await logger.saveDebugSession(sessionId);
+      return { success: true };
+    } catch (error) {
+      console.error('IPC debug:save-session error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to save debug session'
+      };
+    }
+  });
+
+  // Handle debug:load-session - Load debug session
+  ipcMain.handle('debug:load-session', async (_event, sessionId: string) => {
+    try {
+      const logger = getDebugLogger();
+      const session = await logger.loadDebugSession(sessionId);
+      return { success: true, data: session };
+    } catch (error) {
+      console.error('IPC debug:load-session error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to load debug session'
+      };
+    }
+  });
+
+  // Handle debug:get-config - Get debug configuration
+  ipcMain.handle('debug:get-config', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      const config = logger.getConfig();
+      return { success: true, data: config };
+    } catch (error) {
+      console.error('IPC debug:get-config error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get debug config'
+      };
+    }
+  });
+
+  // Handle debug:update-config - Update debug configuration
+  ipcMain.handle('debug:update-config', async (_event, config: any) => {
+    try {
+      const logger = getDebugLogger();
+      logger.updateConfig(config);
+      return { success: true };
+    } catch (error) {
+      console.error('IPC debug:update-config error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update debug config'
+      };
+    }
+  });
+
+  // ============================================================================
+  // Comprehensive Test Utility Handlers (Task 10)
+  // ============================================================================
+
+  // Handle test:camera-access - Comprehensive camera access test
+  ipcMain.handle('test:camera-access', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      const result = await logger.testCameraAccess();
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('IPC test:camera-access error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Camera access test failed'
+      };
+    }
+  });
+
+  // Handle test:ocr-pipeline - Comprehensive OCR pipeline test
+  ipcMain.handle('test:ocr-pipeline', async (_event, testImages?: string[]) => {
+    try {
+      const logger = getDebugLogger();
+      // Create test utilities instance
+      const { createTestUtilities } = await import('./services/TestUtilities');
+      const testUtils = createTestUtilities(logger);
+      const result = await testUtils.testOCRPipeline(testImages);
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('IPC test:ocr-pipeline error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'OCR pipeline test failed'
+      };
+    }
+  });
+
+  // Handle test:calculator-integration - Comprehensive calculator integration test
+  ipcMain.handle('test:calculator-integration', async (_event, expression: string) => {
+    try {
+      const logger = getDebugLogger();
+      const { createTestUtilities } = await import('./services/TestUtilities');
+      const testUtils = createTestUtilities(logger);
+      const result = await testUtils.testCalculatorIntegration(expression);
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('IPC test:calculator-integration error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Calculator integration test failed'
+      };
+    }
+  });
+
+  // Handle test:error-handling - Comprehensive error handling test
+  ipcMain.handle('test:error-handling', async (_event) => {
+    try {
+      const logger = getDebugLogger();
+      const { createTestUtilities } = await import('./services/TestUtilities');
+      const testUtils = createTestUtilities(logger);
+      const result = await testUtils.testErrorHandling();
+      return { success: true, data: result };
+    } catch (error) {
+      console.error('IPC test:error-handling error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Error handling test failed'
+      };
+    }
+  });
+
+  // Handle test:run-all - Run all tests in sequence
+  ipcMain.handle('test:run-all', async (_event, testImages?: string[]) => {
+    try {
+      const logger = getDebugLogger();
+      const { createTestUtilities } = await import('./services/TestUtilities');
+      const testUtils = createTestUtilities(logger);
+      const results = await testUtils.runAllTests(testImages);
+      return { success: true, data: results };
+    } catch (error) {
+      console.error('IPC test:run-all error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Run all tests failed'
+      };
+    }
+  });
+
+  // Handle test:generate-report - Generate test report
+  ipcMain.handle('test:generate-report', async (_event, results: any) => {
+    try {
+      const logger = getDebugLogger();
+      const { createTestUtilities } = await import('./services/TestUtilities');
+      const testUtils = createTestUtilities(logger);
+      const report = testUtils.generateTestReport(results);
+      return { success: true, data: report };
+    } catch (error) {
+      console.error('IPC test:generate-report error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Generate test report failed'
+      };
+    }
+  });
+}
 
 // In this file you can include the rest of your app"s specific main process
 // code. You can also put them in separate files and require them here.

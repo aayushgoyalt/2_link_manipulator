@@ -32,6 +32,11 @@ export interface CameraState {
   lastCapturedImage?: string;
   error?: CameraError;
   capabilities?: CameraCapabilities;
+  // Live feed support
+  isLiveFeedActive?: boolean;
+  currentFrameRate?: number;
+  targetFrameRate?: number;
+  videoStream?: MediaStream;
 }
 
 // Camera service interface
@@ -123,6 +128,7 @@ export interface ProcessingMetadata {
   llmProvider: LLMProvider;
   tokensUsed?: number;
   retryCount: number;
+  source?: 'capture' | 'upload';
 }
 
 // Expression parsing types
@@ -157,6 +163,7 @@ export interface CameraOCRConfig {
   camera: CameraConfig;
   processing: ProcessingConfig;
   ui: UIConfig;
+  debug?: DebugConfig;
 }
 
 export interface CameraConfig {
@@ -200,6 +207,7 @@ export interface CameraError {
   suggestedAction?: string;
   originalError?: Error;
   timestamp: number;
+  platformInstructions?: PlatformInstructions;
 }
 
 export type ProcessingErrorType =
@@ -232,6 +240,20 @@ export interface CameraOCRIPCChannels {
   'camera:get-config': () => void;
   'camera:update-config': (config: Partial<CameraOCRConfig>) => void;
   'camera:get-capabilities': () => void;
+  // Permission manager IPC
+  'permission:get-status': () => void;
+  'permission:get-instructions': (platform: OSPlatform) => void;
+  'permission:open-settings': (platform: OSPlatform) => void;
+  // Image upload IPC
+  'image:open-dialog': () => void;
+  'image:validate': (filePath: string) => void;
+  'image:read-base64': (filePath: string) => void;
+  // Debug logger IPC
+  'debug:enable': () => void;
+  'debug:disable': () => void;
+  'debug:test-camera': () => void;
+  'debug:test-ocr': (imageData: string) => void;
+  'debug:export-logs': () => void;
 }
 
 export interface CameraOCRIPCResponses {
@@ -242,6 +264,16 @@ export interface CameraOCRIPCResponses {
   'camera:processing-error': (error: ProcessingError) => void;
   'camera:config-updated': (config: CameraOCRConfig) => void;
   'camera:capabilities-result': (capabilities: CameraCapabilities) => void;
+  // Permission manager responses
+  'permission:status-result': (status: PermissionStatus) => void;
+  'permission:instructions-result': (instructions: PlatformInstructions) => void;
+  // Image upload responses
+  'image:dialog-result': (filePath: string | null) => void;
+  'image:validation-result': (result: ImageValidationResult) => void;
+  'image:base64-result': (data: string) => void;
+  // Debug logger responses
+  'debug:test-result': (result: TestResult) => void;
+  'debug:logs-exported': (path: string) => void;
 }
 
 // Service factory types
@@ -272,4 +304,122 @@ export interface ConfigValidation {
   isValid: boolean;
   errors: string[];
   warnings: string[];
+}
+
+// Permission Manager types
+export type OSPlatform = 'windows' | 'macos' | 'linux';
+
+export interface PermissionManager {
+  requestPermission(platform: OSPlatform): Promise<boolean>;
+  getPermissionStatus(platform: OSPlatform): Promise<PermissionStatus>;
+  getPlatformInstructions(platform: OSPlatform): PlatformInstructions;
+  openSystemSettings(platform: OSPlatform): void;
+}
+
+export type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unavailable';
+
+export interface PlatformInstructions {
+  platform: OSPlatform;
+  title: string;
+  steps: string[];
+  settingsPath?: string;
+  canAutoOpen: boolean;
+}
+
+export interface PermissionResult {
+  granted: boolean;
+  status: PermissionStatus;
+  error?: string;
+  platformInstructions?: PlatformInstructions;
+}
+
+// Image Upload Handler types
+export interface ImageUploadHandler {
+  openFileDialog(): Promise<string | null>;
+  validateImageFile(filePath: string): Promise<ImageValidationResult>;
+  readImageAsBase64(filePath: string): Promise<string>;
+  getSupportedFormats(): string[];
+}
+
+export interface ImageValidationResult {
+  isValid: boolean;
+  errors: string[];
+  fileInfo?: ImageFileInfo;
+}
+
+export interface ImageFileInfo {
+  size: number;
+  format: string;
+  dimensions: { width: number; height: number };
+  path: string;
+}
+
+export const SUPPORTED_IMAGE_FORMATS = [
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp'
+] as const;
+
+export type SupportedImageFormat = typeof SUPPORTED_IMAGE_FORMATS[number];
+
+// Debug Logger types
+export interface DebugLogger {
+  // Logging methods
+  logCameraInit(success: boolean, details: any): void;
+  logFrameCapture(imageData: string, metadata: any): void;
+  logOCRProcessing(stage: string, data: any): void;
+  logExpressionParsing(input: string, output: string, success: boolean): void;
+  logError(component: string, error: Error, context: any): void;
+  
+  // Debug mode control
+  enableDebugMode(): void;
+  disableDebugMode(): void;
+  isDebugMode(): boolean;
+  
+  // Test utilities
+  testCameraAccess(): Promise<TestResult>;
+  testImageCapture(): Promise<TestResult>;
+  testOCRProcessing(imageData: string): Promise<TestResult>;
+  testCalculatorIntegration(expression: string): Promise<TestResult>;
+  
+  // Data persistence
+  saveDebugSession(sessionId: string): Promise<void>;
+  loadDebugSession(sessionId: string): Promise<DebugSession>;
+  exportDebugLogs(): Promise<string>;
+}
+
+export interface TestResult {
+  component: string;
+  success: boolean;
+  duration: number;
+  details: any;
+  errors?: string[];
+  timestamp: number;
+}
+
+export interface DebugSession {
+  sessionId: string;
+  timestamp: number;
+  logs: DebugLog[];
+  capturedImages: string[];
+  ocrResults: ProcessingResult[];
+}
+
+export interface DebugLog {
+  timestamp: number;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  component: string;
+  operation: string;
+  data: any;
+  error?: Error;
+}
+
+export interface DebugConfig {
+  enabled: boolean;
+  logLevel: 'info' | 'debug' | 'warn' | 'error';
+  saveImages: boolean;
+  saveResults: boolean;
+  maxLogSize: number;
+  debugFolder?: string;
 }

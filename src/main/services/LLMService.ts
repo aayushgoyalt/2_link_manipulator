@@ -16,7 +16,7 @@ export class GeminiLLMService implements LLMService {
   private config: LLMConfig;
   private usageStats: LLMUsageStats;
   private readonly baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
-  private readonly defaultModel = 'gemini-pro-vision';
+  private readonly defaultModel = 'gemini-2.0-flash';
   private retryHandler: NetworkRetryHandler;
   private circuitBreaker: CircuitBreaker;
   private readonly mathPrompt = `
@@ -41,6 +41,13 @@ export class GeminiLLMService implements LLMService {
 
   constructor(config: LLMConfig) {
     this.config = config;
+    console.log('🔧 [LLMService] Constructor called with config:', {
+      provider: config.provider,
+      model: config.model,
+      hasApiKey: !!config.apiKey,
+      apiKeyPrefix: config.apiKey?.substring(0, 10) + '...',
+      defaultModel: this.defaultModel
+    });
     this.usageStats = {
       totalRequests: 0,
       successfulRequests: 0,
@@ -80,6 +87,13 @@ export class GeminiLLMService implements LLMService {
         throw error;
       }
 
+      // Check circuit breaker state before attempting
+      const cbState = this.circuitBreaker.getState();
+      if (cbState.state === 'open') {
+        console.error('Circuit breaker is OPEN. Last failure:', new Date(cbState.lastFailureTime).toISOString());
+        console.error('Circuit breaker will reset in:', Math.round((60000 - (Date.now() - cbState.lastFailureTime)) / 1000), 'seconds');
+      }
+
       // Use circuit breaker and retry handler for the API call
       const result = await this.circuitBreaker.execute(async () => {
         return await this.retryHandler.retryLLMOperation(async () => {
@@ -104,7 +118,12 @@ export class GeminiLLMService implements LLMService {
       this.usageStats.failedRequests++;
       this.updateAverageProcessingTime(processingTime);
 
-      console.error('LLM Service Error:', error);
+      // Log the actual error with full details
+      console.error('LLM Service Error Details:', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        type: error instanceof Error && 'type' in error ? (error as any).type : 'unknown'
+      });
 
       // Handle different types of errors appropriately
       if (error instanceof Error && 'type' in error) {
@@ -138,6 +157,15 @@ export class GeminiLLMService implements LLMService {
     const prompt = customPrompt || this.mathPrompt;
     const model = this.config.model || this.defaultModel;
     const url = `${this.baseUrl}/${model}:generateContent?key=${this.config.apiKey}`;
+    
+    console.log('🚀 [LLMService] Making API request:', {
+      baseUrl: this.baseUrl,
+      configModel: this.config.model,
+      defaultModel: this.defaultModel,
+      selectedModel: model,
+      fullUrl: url.replace(/key=.*/, 'key=***'),
+      imageSize: Math.round(imageData.length / 1024) + 'KB'
+    });
 
     // Extract base64 data from data URL
     const base64Data = imageData.split(',')[1];
@@ -276,6 +304,22 @@ export class GeminiLLMService implements LLMService {
       totalTokensUsed: 0,
       averageProcessingTime: 0
     };
+  }
+
+  /**
+   * Resets the circuit breaker (useful after fixing configuration issues)
+   */
+  resetCircuitBreaker(): void {
+    console.log('Resetting circuit breaker...');
+    this.circuitBreaker.reset();
+    console.log('Circuit breaker reset. State:', this.circuitBreaker.getState());
+  }
+
+  /**
+   * Gets circuit breaker status
+   */
+  getCircuitBreakerStatus(): { state: string; failureCount: number; lastFailureTime: number } {
+    return this.circuitBreaker.getState();
   }
 
   private cleanExpression(expression: string): string {

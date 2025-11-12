@@ -4,7 +4,7 @@
  * Provides cross-platform camera access for Mac and Windows desktop environments
  */
 
-import { desktopCapturer, systemPreferences, screen } from 'electron';
+import { desktopCapturer, screen } from 'electron';
 import { AbstractCameraService } from '../../shared/services/CameraServiceInterface';
 import type { 
   CameraCapabilities, 
@@ -12,6 +12,8 @@ import type {
 } from '../types/camera-ocr';
 import { GeminiLLMService } from './LLMService';
 import { CameraOCRErrorHandler, ErrorRecoveryManager } from './CameraOCRErrorHandler';
+import { DebugLoggerService } from './DebugLoggerService';
+import { PermissionManager } from './PermissionManager';
 
 
 /**
@@ -22,26 +24,84 @@ import { CameraOCRErrorHandler, ErrorRecoveryManager } from './CameraOCRErrorHan
 export class ElectronCameraService extends AbstractCameraService {
   private llmService: GeminiLLMService;
   private currentStream: MediaStream | null = null;
+  private debugLogger?: DebugLoggerService;
+  private permissionManager: any; // PermissionManager instance
 
-  constructor() {
+  constructor(debugLogger?: DebugLoggerService) {
     super('electron-desktop');
+    
+    this.debugLogger = debugLogger;
     
     // Get API key from environment or configuration
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
     
+    // Log API key status (without exposing the key)
+    console.log('Gemini API Key Status:', {
+      configured: !!apiKey,
+      length: apiKey.length,
+      source: process.env.GEMINI_API_KEY ? 'GEMINI_API_KEY' : process.env.VITE_GEMINI_API_KEY ? 'VITE_GEMINI_API_KEY' : 'none'
+    });
+    
     this.llmService = new GeminiLLMService({
       provider: 'gemini',
       apiKey: apiKey,
-      model: 'gemini-pro-vision',
-      maxTokens: 1000,
-      temperature: 0.1,
-      timeout: 30000
+      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+      maxTokens: process.env.GEMINI_MAX_TOKENS ? parseInt(process.env.GEMINI_MAX_TOKENS) : 1000,
+      temperature: process.env.GEMINI_TEMPERATURE ? parseFloat(process.env.GEMINI_TEMPERATURE) : 0.1,
+      timeout: process.env.GEMINI_TIMEOUT ? parseInt(process.env.GEMINI_TIMEOUT) : 30000
     });
+
+    // Initialize permission manager
+    this.permissionManager = PermissionManager.getInstance();
+
+    // Log camera initialization
+    if (this.debugLogger) {
+      this.debugLogger.logCameraInit(true, {
+        platform: this.platform,
+        apiKeyConfigured: !!apiKey
+      });
+    }
+  }
+
+  /**
+   * Check permission status before requesting
+   * Returns current permission status and platform-specific help if needed
+   */
+  async checkPermissionStatus(): Promise<{
+    status: string;
+    granted: boolean;
+    platformInstructions?: any;
+  }> {
+    const startTime = Date.now();
+    
+    try {
+      const osPlatform = this.permissionManager.detectOS();
+      const status = await this.permissionManager.getPermissionStatus(osPlatform);
+      
+      const result = {
+        status,
+        granted: status === 'granted',
+        platformInstructions: undefined as any
+      };
+      
+      // If permission is denied, include platform-specific instructions
+      if (status === 'denied') {
+        result.platformInstructions = this.permissionManager.getPlatformInstructions(osPlatform);
+      }
+      
+      this.logOperation('checkPermissionStatus', startTime, true, undefined, { status });
+      
+      return result;
+    } catch (error) {
+      this.logOperation('checkPermissionStatus', startTime, false, error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
   }
 
   /**
    * Requests camera permission using Electron's native APIs
    * Handles platform-specific permission models for Mac and Windows
+   * Now includes platform-specific help window support
    */
   async requestCameraPermission(): Promise<boolean> {
     const startTime = Date.now();
@@ -49,69 +109,54 @@ export class ElectronCameraService extends AbstractCameraService {
     try {
       this.emit('permission-requested', { platform: this.platform });
       
-      // Check if we're on macOS and need to request camera permission
-      if (process.platform === 'darwin') {
-        const status = systemPreferences.getMediaAccessStatus('camera');
+      const osPlatform = this.permissionManager.detectOS();
+      
+      // Check permission status first
+      const permissionStatus = await this.checkPermissionStatus();
+      
+      // If already granted, return true
+      if (permissionStatus.granted) {
+        this.state.hasPermission = true;
+        this.clearError();
+        this.emit('permission-granted', { platform: this.platform });
+        this.logOperation('requestPermission', startTime, true);
+        return true;
+      }
+      
+      // If denied, provide platform-specific help
+      if (permissionStatus.status === 'denied') {
+        const error = CameraOCRErrorHandler.handleCameraPermissionError('electron-desktop');
+        error.platformInstructions = permissionStatus.platformInstructions;
+        this.setError(error);
+        this.logOperation('requestPermission', startTime, false, error.message);
         
-        if (status === 'denied') {
-          const error = CameraOCRErrorHandler.handleCameraPermissionError('electron-desktop');
-          this.setError(error);
-          this.logOperation('requestPermission', startTime, false, error.message);
-          
-          // Record error for pattern analysis
-          ErrorRecoveryManager.recordError(error, {
-            operationType: 'camera-permission',
-            attemptNumber: 1,
-            previousErrors: [],
-            platform: process.platform,
-            timestamp: Date.now()
-          });
-          
-          return false;
-        }
+        // Record error for pattern analysis
+        ErrorRecoveryManager.recordError(error, {
+          operationType: 'camera-permission',
+          attemptNumber: 1,
+          previousErrors: [],
+          platform: process.platform,
+          timestamp: Date.now()
+        });
         
-        if (status === 'restricted') {
-          const error = CameraOCRErrorHandler.createCameraError(
-            'permission-denied',
-            'Camera access is restricted by system policy.',
-            undefined,
-            'Contact system administrator to enable camera access'
-          );
-          this.setError(error);
-          this.logOperation('requestPermission', startTime, false, error.message);
-          
-          ErrorRecoveryManager.recordError(error, {
-            operationType: 'camera-permission',
-            attemptNumber: 1,
-            previousErrors: [],
-            platform: process.platform,
-            timestamp: Date.now()
-          });
-          
-          return false;
-        }
-        
-        if (status === 'not-determined') {
-          // Request permission - this will show system dialog
-          const granted = await systemPreferences.askForMediaAccess('camera');
-          
-          if (!granted) {
-            const error: CameraError = {
-              type: 'permission-denied',
-              message: 'Camera permission was denied by user.',
-              recoverable: true,
-              suggestedAction: 'Restart application and grant camera access when prompted',
-              timestamp: Date.now()
-            };
-            this.setError(error);
-            this.logOperation('requestPermission', startTime, false, error.message);
-            return false;
-          }
-        }
-      } else {
-        // For Windows and Linux, permission is handled at the OS level
-        // We'll assume permission is granted and let the capture fail if not
-        console.log('Camera permission check skipped for non-macOS platform');
+        return false;
+      }
+      
+      // Request permission using permission manager
+      const granted = await this.permissionManager.requestPermission(osPlatform);
+      
+      if (!granted) {
+        const error: CameraError = {
+          type: 'permission-denied',
+          message: 'Camera permission was denied by user.',
+          recoverable: true,
+          suggestedAction: 'Grant camera access in system settings',
+          platformInstructions: this.permissionManager.getPlatformInstructions(osPlatform),
+          timestamp: Date.now()
+        };
+        this.setError(error);
+        this.logOperation('requestPermission', startTime, false, error.message);
+        return false;
       }
       
       // Update state
@@ -138,10 +183,73 @@ export class ElectronCameraService extends AbstractCameraService {
   }
 
   /**
-   * Captures image using Electron's desktopCapturer or getUserMedia
-   * Provides fallback mechanisms for different capture methods
+   * Auto-retry permission request after user grants permission
+   * This is called from the renderer after user follows platform instructions
    */
-  async captureImage(): Promise<string> {
+  async retryPermissionAfterGrant(): Promise<boolean> {
+    const startTime = Date.now();
+    
+    try {
+      // Clear previous error
+      this.clearError();
+      
+      // Check permission status again
+      const permissionStatus = await this.checkPermissionStatus();
+      
+      if (permissionStatus.granted) {
+        this.state.hasPermission = true;
+        this.emit('permission-granted', { platform: this.platform, retry: true });
+        this.logOperation('retryPermission', startTime, true);
+        return true;
+      }
+      
+      this.logOperation('retryPermission', startTime, false, 'Permission still not granted');
+      return false;
+    } catch (error) {
+      this.logOperation('retryPermission', startTime, false, error instanceof Error ? error.message : 'Unknown error');
+      return false;
+    }
+  }
+
+  /**
+   * Open system settings for camera permissions
+   * Delegates to PermissionManager
+   */
+  openSystemSettings(): void {
+    try {
+      const osPlatform = this.permissionManager.detectOS();
+      this.permissionManager.openSystemSettings(osPlatform);
+    } catch (error) {
+      console.error('Error opening system settings:', error);
+    }
+  }
+
+  /**
+   * Get video stream constraints for live feed
+   * Returns optimal constraints for 1280x720 at 15+ FPS
+   */
+  getVideoConstraints(): MediaStreamConstraints {
+    return {
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { min: 15, ideal: 30 },
+        facingMode: 'environment' // Prefer rear camera if available
+      },
+      audio: false
+    };
+  }
+
+  /**
+   * Initialize live video stream
+   * Note: This method provides configuration, but actual getUserMedia call
+   * must be made in the renderer process due to Electron security model
+   */
+  async initializeLiveStream(): Promise<{
+    constraints: MediaStreamConstraints;
+    success: boolean;
+    error?: string;
+  }> {
     const startTime = Date.now();
     
     try {
@@ -149,31 +257,98 @@ export class ElectronCameraService extends AbstractCameraService {
       if (!this.state.hasPermission) {
         const hasPermission = await this.requestCameraPermission();
         if (!hasPermission) {
-          throw new Error('Camera permission required for image capture');
+          return {
+            constraints: this.getVideoConstraints(),
+            success: false,
+            error: 'Camera permission required for live stream'
+          };
         }
       }
       
-      // In Electron, camera capture should be handled by the renderer process
-      // The main process cannot access the camera directly
-      throw new Error('Camera capture must be handled by renderer process in Electron. Use the web camera interface.');
+      // Mark camera as active
+      this.state.isActive = true;
+      this.emit('camera-activated', { mode: 'live-stream' });
+      
+      this.logOperation('initializeLiveStream', startTime, true);
+      
+      return {
+        constraints: this.getVideoConstraints(),
+        success: true
+      };
       
     } catch (error) {
-      this.state.isProcessing = false;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logOperation('initializeLiveStream', startTime, false, errorMessage);
       
+      return {
+        constraints: this.getVideoConstraints(),
+        success: false,
+        error: errorMessage
+      };
+    }
+  }
+
+  /**
+   * Capture frame from live video stream
+   * Accepts base64 image data from renderer process
+   * This is called after the renderer captures a frame from the video element
+   */
+  async captureFrameFromStream(imageData: string): Promise<string> {
+    const startTime = Date.now();
+    
+    try {
+      // Validate image data
+      if (!imageData || !imageData.startsWith('data:image/')) {
+        throw new Error('Invalid image data format');
+      }
+      
+      // Store captured image
+      this.state.lastCapturedImage = imageData;
+      
+      // Log capture with metadata
+      if (this.debugLogger) {
+        const imageSize = Math.round(imageData.length / 1024);
+        this.debugLogger.logFrameCapture(imageData, {
+          size: `${imageSize}KB`,
+          timestamp: Date.now(),
+          source: 'live-stream'
+        });
+      }
+      
+      this.emit('image-captured', { 
+        imageSize: imageData.length,
+        source: 'live-stream'
+      });
+      
+      this.logOperation('captureFrame', startTime, true, undefined, {
+        imageSize: imageData.length
+      });
+      
+      return imageData;
+      
+    } catch (error) {
       const cameraError: CameraError = {
         type: 'capture-failed',
-        message: `Image capture failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Frame capture failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         recoverable: true,
-        suggestedAction: 'Check camera hardware and try again',
+        suggestedAction: 'Try capturing again',
         originalError: error as Error,
         timestamp: Date.now()
       };
       
       this.setError(cameraError);
-      this.logOperation('captureImage', startTime, false, cameraError.message);
+      this.logOperation('captureFrame', startTime, false, cameraError.message);
       
       throw cameraError;
     }
+  }
+
+  /**
+   * Legacy captureImage method - redirects to proper implementation
+   * Maintains backward compatibility
+   */
+  async captureImage(): Promise<string> {
+    throw new Error('Use captureFrameFromStream() for live video capture. Camera capture must be initiated from renderer process.');
   }
 
 
@@ -309,13 +484,45 @@ export class ElectronCameraService extends AbstractCameraService {
   }
 
   /**
+   * Stop video stream and release camera resources
+   * This is called from renderer after stopping the MediaStream
+   */
+  async stopVideoStream(): Promise<void> {
+    const startTime = Date.now();
+    
+    try {
+      // Mark camera as inactive
+      this.state.isActive = false;
+      
+      // Clear captured image
+      this.state.lastCapturedImage = undefined;
+      
+      this.emit('camera-deactivated', { reason: 'stream-stopped' });
+      
+      this.logOperation('stopVideoStream', startTime, true);
+      
+    } catch (error) {
+      console.warn('Error stopping video stream:', error);
+      this.logOperation('stopVideoStream', startTime, false, error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  /**
    * Cleanup camera resources and streams
+   * Properly releases all video tracks and clears state
    */
   async cleanup(): Promise<void> {
+    const startTime = Date.now();
+    
     try {
       // Stop any active camera stream
+      // Note: In Electron, the actual MediaStream is in the renderer process
+      // This cleanup is for the main process state
       if (this.currentStream) {
-        this.currentStream.getTracks().forEach(track => track.stop());
+        this.currentStream.getTracks().forEach(track => {
+          track.stop();
+          console.log(`Stopped track: ${track.kind}, id: ${track.id}`);
+        });
         this.currentStream = null;
       }
       
@@ -329,8 +536,18 @@ export class ElectronCameraService extends AbstractCameraService {
       
       this.emit('camera-deactivated', { reason: 'cleanup' });
       
+      this.logOperation('cleanup', startTime, true);
+      
+      if (this.debugLogger) {
+        this.debugLogger.logCameraInit(false, {
+          reason: 'cleanup',
+          timestamp: Date.now()
+        });
+      }
+      
     } catch (error) {
       console.warn('Error during camera cleanup:', error);
+      this.logOperation('cleanup', startTime, false, error instanceof Error ? error.message : 'Unknown error');
     }
   }
 }

@@ -318,8 +318,9 @@ export class MockDatabase implements MockDBInterface {
       throw ErrorHandler.handleValidationError('operation', record.operation, 'string', 'Operation string too long (max 1000 characters)');
     }
     
-    // Allow mathematical operations with both basic and display symbols
-    if (!/^[\d\s+\-*/.%()×÷−]+$/.test(record.operation)) {
+    // Allow mathematical operations with both basic and display symbols, plus OCR prefix
+    // Allow letters, colon, and space for "OCR: " prefix
+    if (!/^[A-Za-z]*:?\s*[\d\s+\-*/.%()×÷−]+$/.test(record.operation)) {
       throw ErrorHandler.handleValidationError('operation', record.operation, 'string', 'Operation contains invalid characters');
     }
 

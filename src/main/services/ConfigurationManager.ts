@@ -247,7 +247,7 @@ export class ConfigurationManager {
       llm: {
         provider: 'gemini',
         apiKey: '',
-        model: 'gemini-pro-vision',
+        model: 'gemini-2.0-flash',
         maxTokens: 100,
         temperature: 0.1,
         timeout: 30000
@@ -522,7 +522,7 @@ export class EnvironmentConfigLoader {
       config.llm = {
         provider: 'gemini',
         apiKey: process.env.GEMINI_API_KEY,
-        model: process.env.GEMINI_MODEL || 'gemini-pro-vision',
+        model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
         maxTokens: process.env.GEMINI_MAX_TOKENS ? parseInt(process.env.GEMINI_MAX_TOKENS) : undefined,
         temperature: process.env.GEMINI_TEMPERATURE ? parseFloat(process.env.GEMINI_TEMPERATURE) : undefined,
         timeout: process.env.GEMINI_TIMEOUT ? parseInt(process.env.GEMINI_TIMEOUT) : undefined

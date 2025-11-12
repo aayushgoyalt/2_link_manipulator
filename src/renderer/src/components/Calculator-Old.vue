@@ -581,63 +581,186 @@ onErrorCaptured((error, _instance, info) => {
 });
 </script>
 
-
 <template>
-  <div class="h-screen w-screen flex justify-center items-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
-    <div class="flex bg-slate-800 rounded-2xl shadow-2xl overflow-hidden border border-slate-700">
-      <!-- Calculator main section -->
-      <div class="flex flex-col w-[700px] max-w-[90vw]">
+  <div class="h-screen w-screen flex flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-3 overflow-hidden">
+    <!-- Main content container -->
+    <div class="flex-1 flex gap-3 overflow-hidden max-h-full">
+      <!-- Calculator container -->
+      <div class="flex-1 flex flex-col bg-slate-800 rounded-2xl shadow-2xl overflow-hidden min-w-0">
         <!-- Display -->
-        <div class="h-20 bg-slate-900 text-white text-right text-4xl flex items-center justify-end px-6 border-b border-slate-700 rounded-t-2xl">
-          {{ state.currentValue || '0' }}
-        </div>
-
+        <CalculatorDisplay
+          ref="calculatorDisplayRef"
+          :current-value="state.currentValue"
+          :previous-value="state.previousValue"
+          :operation="state.operation"
+        />
+        
         <!-- Button grid -->
-        <div class="grid grid-cols-4 gap-1.5 p-4 bg-slate-800 rounded-b-2xl">
-          <!-- Row 1 -->
-          <CalculatorButton label="C" variant="clear" @click="handleClearClick" />
-
+        <div class="flex-1 p-3 grid grid-cols-4 gap-2 content-stretch">
+        <!-- Row 1: Clear, Backspace, Camera, / -->
+        <div class="relative">
+          <CalculatorButton
+            label="C"
+            variant="clear"
+            @click="handleClearClick"
+            :title="'Single click: Clear calculator | Double click: Clear all + history'"
+          />
+          <!-- Double-click indicator -->
+          <div 
+            v-if="clearClickCount > 0"
+            class="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-10"
+          >
+            Double-click for AC
+          </div>
+        </div>
+        <CalculatorButton
+          label="⌫"
+          variant="function"
+          @click="handleBackspace"
+        />
+        <!-- Camera OCR Button -->
+        <div class="relative">
           <CameraButton
             :disabled="isCameraProcessing"
             :is-processing="isCameraProcessing"
             size="medium"
             variant="secondary"
             @click="handleCameraClick"
-            class="!py-3"
           />
+          <!-- Camera error indicator -->
+          <div 
+            v-if="hasCameraError"
+            class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-800"
+            :title="cameraError?.message"
+          />
+        </div>
+        <CalculatorButton
+          label="÷"
+          variant="operation"
+          @click="() => handleOperationClick('/')"
+        />
+        
+        <!-- Row 2: %, 7, 8, 9 -->
+        <CalculatorButton
+          label="%"
+          variant="operation"
+          @click="() => handleOperationClick('%')"
+        />
 
-          <CalculatorButton label="⌫" variant="function" @click="handleBackspace" />
-          <CalculatorButton label="÷" variant="operation" @click="() => handleOperationClick('/')" />
-
-          <!-- Row 2 -->
-          <CalculatorButton label="7" variant="number" @click="() => handleNumberClick('7')" />
-          <CalculatorButton label="8" variant="number" @click="() => handleNumberClick('8')" />
-          <CalculatorButton label="9" variant="number" @click="() => handleNumberClick('9')" />
-          <CalculatorButton label="×" variant="operation" @click="() => handleOperationClick('*')" />
-
-          <!-- Row 3 -->
-          <CalculatorButton label="4" variant="number" @click="() => handleNumberClick('4')" />
-          <CalculatorButton label="5" variant="number" @click="() => handleNumberClick('5')" />
-          <CalculatorButton label="6" variant="number" @click="() => handleNumberClick('6')" />
-          <CalculatorButton label="−" variant="operation" @click="() => handleOperationClick('-')" />
-
-          <!-- Row 4 -->
-          <CalculatorButton label="1" variant="number" @click="() => handleNumberClick('1')" />
-          <CalculatorButton label="2" variant="number" @click="() => handleNumberClick('2')" />
-          <CalculatorButton label="3" variant="number" @click="() => handleNumberClick('3')" />
-          <CalculatorButton label="+" variant="operation" @click="() => handleOperationClick('+')" />
-
-          <!-- Row 5 -->
-          <CalculatorButton label="0" variant="number" @click="() => handleNumberClick('0')" />
-          <CalculatorButton label="00" variant="number" @click="() => handleNumberClick('00')" />
-          <CalculatorButton label="." variant="number" @click="() => handleNumberClick('.')" />
-          <CalculatorButton label="=" variant="equals" @click="handleEquals" />
+        <CalculatorButton
+          label="7"
+          variant="number"
+          @click="() => handleNumberClick('7')"
+        />
+        <CalculatorButton
+          label="8"
+          variant="number"
+          @click="() => handleNumberClick('8')"
+        />
+        <CalculatorButton
+          label="9"
+          variant="number"
+          @click="() => handleNumberClick('9')"
+        />
+        <CalculatorButton
+          label="×"
+          variant="operation"
+          @click="() => handleOperationClick('*')"
+        />
+        
+        
+        <!-- Row 3: 4, 5, 6, - -->
+        <CalculatorButton
+          label="4"
+          variant="number"
+          @click="() => handleNumberClick('4')"
+        />
+        <CalculatorButton
+          label="5"
+          variant="number"
+          @click="() => handleNumberClick('5')"
+        />
+        <CalculatorButton
+          label="6"
+          variant="number"
+          @click="() => handleNumberClick('6')"
+        />
+        <CalculatorButton
+          label="−"
+          variant="operation"
+          @click="() => handleOperationClick('-')"
+        />
+        
+        
+        <!-- Row 4: 1, 2, 3, + -->
+        <CalculatorButton
+          label="1"
+          variant="number"
+          @click="() => handleNumberClick('1')"
+        />
+        <CalculatorButton
+          label="2"
+          variant="number"
+          @click="() => handleNumberClick('2')"
+        />
+        <CalculatorButton
+          label="3"
+          variant="number"
+          @click="() => handleNumberClick('3')"
+        />
+        <CalculatorButton
+          label="+"
+          variant="operation"
+          @click="() => handleOperationClick('+')"
+        />
+        
+        
+        <!-- Row 5: +/-, 0, ., = -->
+        <CalculatorButton
+          label="±"
+          variant="function"
+          @click="handleToggleSign"
+        />
+        <CalculatorButton
+          label="0"
+          variant="number"
+          @click="() => handleNumberClick('0')"
+        />
+        <CalculatorButton
+          label="."
+          variant="number"
+          @click="() => handleNumberClick('.')"
+        />
+        <CalculatorButton
+          label="="
+          variant="equals"
+          @click="handleEquals"
+        />
         </div>
       </div>
-
+      
       <!-- History Panel -->
-      <div class="w-72 bg-slate-700 p-4 border-l border-slate-600">
-        <h2 class="text-slate-200 text-sm font-semibold mb-2">History</h2>
+      <div class="w-80 flex-shrink-0">
+        <!-- Initialization Error Banner -->
+        <div
+          v-if="initializationError && isAppInitialized"
+          class="mb-2 p-3 bg-red-900/50 border border-red-700 rounded-lg"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <span class="text-red-400 text-sm">⚠️</span>
+              <span class="text-red-300 text-xs">History initialization failed</span>
+            </div>
+            <button
+              @click="handleHistoryError"
+              class="text-xs text-red-400 hover:text-red-300 transition-colors duration-200 px-2 py-1 rounded border border-red-600 hover:border-red-500"
+            >
+              Retry
+            </button>
+          </div>
+          <p class="text-xs text-red-400 mt-1 opacity-75">{{ initializationError }}</p>
+        </div>
+        
         <HistoryPanel
           :records="records"
           :is-loading="isLoading || !isAppInitialized"
