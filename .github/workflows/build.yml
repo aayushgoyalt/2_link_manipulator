@@ -3,7 +3,7 @@ name: Build Windows Electron App
 on:
   workflow_dispatch: # allows manual trigger
   push:
-    branches: [main]
+    branches: [main,master]
 
 jobs:
   build:
