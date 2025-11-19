@@ -17,10 +17,10 @@ const ctx = ref<CanvasRenderingContext2D | null>(null)
 
 const resizeCanvas = () => {
   if (!canvas.value) return
-  
+
   const container = canvas.value.parentElement
   if (!container) return
-  
+
   canvas.value.width = container.clientWidth
   canvas.value.height = container.clientHeight
   drawManipulator()
@@ -131,24 +131,7 @@ watch(() => [props.theta1, props.theta2, props.L1, props.L2], drawManipulator)
 </script>
 
 <template>
-  <div class="canvas-container">
-    <canvas ref="canvas"></canvas>
+  <div class="flex-1 flex items-center justify-center bg-[#0a0a0a] border-r-2 border-[#333]">
+    <canvas ref="canvas" class="w-full h-full block"></canvas>
   </div>
 </template>
-
-<style scoped>
-.canvas-container {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #0a0a0a;
-  border-right: 2px solid #333;
-}
-
-canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-</style>

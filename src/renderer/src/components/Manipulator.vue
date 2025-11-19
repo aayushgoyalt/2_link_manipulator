@@ -19,10 +19,10 @@ let animationId: number | null = null
 const endEffector = computed(() => {
   const t1 = (theta1.value * Math.PI) / 180
   const t2 = (theta2.value * Math.PI) / 180
-  
+
   const x = L1.value * Math.cos(t1) + L2.value * Math.cos(t1 + t2)
   const y = L1.value * Math.sin(t1) + L2.value * Math.sin(t1 + t2)
-  
+
   return { x, y }
 })
 
@@ -54,17 +54,17 @@ const updateL2 = (value: number) => {
 const startMovement = () => {
   if (isMoving.value) return
   isMoving.value = true
-  
+
   const animate = () => {
     theta1.value += 1
     theta2.value += 0.5
-    
+
     if (theta1.value > 180) theta1.value = -180
     if (theta2.value > 180) theta2.value = -180
-    
+
     animationId = requestAnimationFrame(animate)
   }
-  
+
   animationId = requestAnimationFrame(animate)
 }
 
@@ -90,7 +90,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="manipulator-container">
+  <div class="flex w-screen h-screen bg-[#1a1a1a] text-white">
     <ManipulatorCanvas
       :theta1="theta1"
       :theta2="theta2"
@@ -116,13 +116,3 @@ onUnmounted(() => {
     />
   </div>
 </template>
-
-<style scoped>
-.manipulator-container {
-  display: flex;
-  width: 100vw;
-  height: 100vh;
-  background: #1a1a1a;
-  color: #fff;
-}
-</style>
