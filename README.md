@@ -11,9 +11,21 @@ npm run dev
 
 ## Build
 
+### Desktop App (Electron)
 ```bash
 npm run build
 ```
+
+### Web App
+```bash
+npm run build:web
+```
+
+Output will be in `dist-web/` folder ready for deployment.
+
+## Deploy
+
+See [DEPLOY.md](DEPLOY.md) for deployment instructions to Netlify, Vercel, or GitHub Pages.
 
 ## Controls
 

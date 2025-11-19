@@ -14,6 +14,8 @@
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "build:web": "vite build --config vite.config.web.mjs",
+    "preview:web": "vite preview --config vite.config.web.mjs",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
