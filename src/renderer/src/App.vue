@@ -1,7 +1,7 @@
 <script setup lang="ts">
-
+import Manipulator from './components/Manipulator.vue'
 </script>
 
 <template>
-  <div class="bg-blue-500 text-white p-4">Hello Tailwind!</div>
+  <Manipulator />
 </template>
