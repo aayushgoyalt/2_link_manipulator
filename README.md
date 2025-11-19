@@ -2,6 +2,9 @@
 
 A 2-link robotic manipulator visualization tool built with Electron and Vue 3. This educational application demonstrates forward kinematics with interactive controls and real-time visualization.
 
+## Deployment URL
+https://2-link.netlify.app/
+
 ## Quick Start
 
 ```bash
