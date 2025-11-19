@@ -1,12 +1,7 @@
 <script setup lang="ts">
-/**
- * Main Application Component
- * Entry point for the Electron Calculator application
- */
 
-import Calculator from './components/Calculator.vue';
 </script>
 
 <template>
-  <Calculator />
+  <div class="bg-blue-500 text-white p-4">Hello Tailwind!</div>
 </template>
