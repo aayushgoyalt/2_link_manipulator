@@ -1,23 +1,58 @@
+<!--
+  ManipulatorControls Component - User Interface Panel
+  
+  This component provides the control interface for adjusting manipulator parameters
+  and controlling animation. It displays real-time values and allows user interaction
+  through sliders and buttons.
+  
+  Control Sections:
+  1. Joint Angles - Sliders for θ₁ and θ₂ (-180° to 180°)
+  2. Link Lengths - Sliders for L₁ and L₂ (50px to 250px)
+  3. End Effector Position - Read-only display of calculated X,Y coordinates
+  4. Animation Controls - Start/Stop and Reset buttons
+  
+  UI Features:
+  - Real-time value display with proper units (°, px)
+  - Smooth range sliders with custom styling
+  - Responsive button states (Start/Stop toggle)
+  - Dark theme matching the canvas
+  - Fixed width panel (400px) with scrolling for smaller screens
+  
+  Event Emission:
+  - Emits update events for all parameter changes
+  - Emits control events (start, stop, reset) for animation
+-->
+
 <script setup lang="ts">
+/**
+ * Component Props Interface
+ * Receives current state from parent Manipulator component
+ */
 interface Props {
-  theta1: number
-  theta2: number
-  L1: number
-  L2: number
-  endEffector: { x: number; y: number }
-  isMoving: boolean
+  theta1: number                          // Current first joint angle
+  theta2: number                          // Current second joint angle
+  L1: number                              // Current first link length
+  L2: number                              // Current second link length
+  endEffector: { x: number; y: number }   // Current end effector position
+  isMoving: boolean                       // Animation state flag
 }
 
 defineProps<Props>()
 
+/**
+ * Event Emitters
+ * 
+ * Update events: Emitted when user changes slider values
+ * Control events: Emitted when user clicks control buttons
+ */
 const emit = defineEmits<{
-  'update:theta1': [value: number]
-  'update:theta2': [value: number]
-  'update:L1': [value: number]
-  'update:L2': [value: number]
-  start: []
-  stop: []
-  reset: []
+  'update:theta1': [value: number]   // User adjusted θ₁ slider
+  'update:theta2': [value: number]   // User adjusted θ₂ slider
+  'update:L1': [value: number]       // User adjusted L₁ slider
+  'update:L2': [value: number]       // User adjusted L₂ slider
+  start: []                          // User clicked Start Movement
+  stop: []                           // User clicked Stop Movement
+  reset: []                          // User clicked Reset to Default
 }>()
 </script>
 
