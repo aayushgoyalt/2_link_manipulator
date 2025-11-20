@@ -110,10 +110,12 @@ const drawManipulator = () => {
 
   // Calculate auto-scale to fit workspace in viewport with padding
   const workspaceRadius = props.L1 + props.L2
-  const padding = 40 // Padding around workspace
+  const padding = 60 // Padding around workspace
   const availableWidth = w - padding * 2
   const availableHeight = h - padding * 2
-  const scale = Math.min(availableWidth, availableHeight) / (workspaceRadius * 2)
+  const maxScale = 0.7 // Limit maximum scale to 70% on large screens
+  const calculatedScale = Math.min(availableWidth, availableHeight) / (workspaceRadius * 2)
+  const scale = Math.min(calculatedScale, maxScale)
 
   // Transform coordinate system: center origin, flip Y-axis, and scale
   c.save()
@@ -127,21 +129,25 @@ const drawManipulator = () => {
   c.lineWidth = 1 / scale
 
   const gridSize = 50
-  const maxReach = workspaceRadius + 50
+  // Calculate grid bounds in scaled coordinates to fill entire canvas
+  const gridLeft = -w / (2 * scale)
+  const gridRight = w / (2 * scale)
+  const gridTop = h / (2 * scale)
+  const gridBottom = -h / (2 * scale)
 
-  // Vertical grid lines (every 50px)
-  for (let i = -maxReach; i <= maxReach; i += gridSize) {
+  // Vertical grid lines (every 50px) - fill entire canvas width
+  for (let i = Math.floor(gridLeft / gridSize) * gridSize; i <= gridRight; i += gridSize) {
     c.beginPath()
-    c.moveTo(i, -maxReach)
-    c.lineTo(i, maxReach)
+    c.moveTo(i, gridBottom)
+    c.lineTo(i, gridTop)
     c.stroke()
   }
 
-  // Horizontal grid lines (every 50px)
-  for (let i = -maxReach; i <= maxReach; i += gridSize) {
+  // Horizontal grid lines (every 50px) - fill entire canvas height
+  for (let i = Math.floor(gridBottom / gridSize) * gridSize; i <= gridTop; i += gridSize) {
     c.beginPath()
-    c.moveTo(-maxReach, i)
-    c.lineTo(maxReach, i)
+    c.moveTo(gridLeft, i)
+    c.lineTo(gridRight, i)
     c.stroke()
   }
 
@@ -151,16 +157,16 @@ const drawManipulator = () => {
   c.strokeStyle = '#666'
   c.lineWidth = 2 / scale
 
-  // X-axis (horizontal)
+  // X-axis (horizontal) - full canvas width
   c.beginPath()
-  c.moveTo(-maxReach, 0)
-  c.lineTo(maxReach, 0)
+  c.moveTo(gridLeft, 0)
+  c.lineTo(gridRight, 0)
   c.stroke()
 
-  // Y-axis (vertical)
+  // Y-axis (vertical) - full canvas height
   c.beginPath()
-  c.moveTo(0, -maxReach)
-  c.lineTo(0, maxReach)
+  c.moveTo(0, gridBottom)
+  c.lineTo(0, gridTop)
   c.stroke()
 
   // -------------------------------------------------------------------------
