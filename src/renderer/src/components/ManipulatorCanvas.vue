@@ -34,12 +34,12 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
  * Receives all necessary data from parent Manipulator component
  */
 interface Props {
-  theta1: number                          // First joint angle in degrees
-  theta2: number                          // Second joint angle in degrees
-  L1: number                              // First link length in pixels
-  L2: number                              // Second link length in pixels
-  joint1: { x: number; y: number }        // Calculated joint 1 position
-  endEffector: { x: number; y: number }   // Calculated end effector position
+  theta1: number // First joint angle in degrees
+  theta2: number // Second joint angle in degrees
+  L1: number // First link length in pixels
+  L2: number // Second link length in pixels
+  joint1: { x: number; y: number } // Calculated joint 1 position
+  endEffector: { x: number; y: number } // Calculated end effector position
 }
 
 const props = defineProps<Props>()
@@ -60,7 +60,7 @@ const ctx = ref<CanvasRenderingContext2D | null>(null)
 
 /**
  * Resize canvas to match container dimensions
- * 
+ *
  * This ensures the canvas always fills its container and maintains
  * proper pixel density for crisp rendering. Called on mount and window resize.
  */
@@ -73,7 +73,7 @@ const resizeCanvas = () => {
   // Set canvas internal resolution to match display size
   canvas.value.width = container.clientWidth
   canvas.value.height = container.clientHeight
-  
+
   // Redraw after resize
   drawManipulator()
 }
@@ -84,7 +84,7 @@ const resizeCanvas = () => {
 
 /**
  * Main drawing function - renders the complete manipulator visualization
- * 
+ *
  * Drawing order (back to front):
  * 1. Clear canvas
  * 2. Set up coordinate system (center origin, flip Y-axis)
@@ -92,7 +92,7 @@ const resizeCanvas = () => {
  * 4. Draw workspace boundary
  * 5. Draw links and joints
  * 6. Draw end effector
- * 
+ *
  * Coordinate System:
  * - Origin at canvas center
  * - Y-axis flipped to point upward (standard math convention)
@@ -108,30 +108,40 @@ const drawManipulator = () => {
   // Clear previous frame
   c.clearRect(0, 0, w, h)
 
-  // Transform coordinate system: center origin and flip Y-axis
+  // Calculate auto-scale to fit workspace in viewport with padding
+  const workspaceRadius = props.L1 + props.L2
+  const padding = 40 // Padding around workspace
+  const availableWidth = w - padding * 2
+  const availableHeight = h - padding * 2
+  const scale = Math.min(availableWidth, availableHeight) / (workspaceRadius * 2)
+
+  // Transform coordinate system: center origin, flip Y-axis, and scale
   c.save()
-  c.translate(w / 2, h / 2)  // Move origin to center
-  c.scale(1, -1)              // Flip Y-axis (up is positive)
+  c.translate(w / 2, h / 2) // Move origin to center
+  c.scale(scale, -scale) // Scale and flip Y-axis (up is positive)
 
   // -------------------------------------------------------------------------
   // BACKGROUND: Grid
   // -------------------------------------------------------------------------
   c.strokeStyle = '#333'
-  c.lineWidth = 1
-  
+  c.lineWidth = 1 / scale
+
+  const gridSize = 50
+  const maxReach = workspaceRadius + 50
+
   // Vertical grid lines (every 50px)
-  for (let i = -w / 2; i < w / 2; i += 50) {
+  for (let i = -maxReach; i <= maxReach; i += gridSize) {
     c.beginPath()
-    c.moveTo(i, -h / 2)
-    c.lineTo(i, h / 2)
+    c.moveTo(i, -maxReach)
+    c.lineTo(i, maxReach)
     c.stroke()
   }
-  
+
   // Horizontal grid lines (every 50px)
-  for (let i = -h / 2; i < h / 2; i += 50) {
+  for (let i = -maxReach; i <= maxReach; i += gridSize) {
     c.beginPath()
-    c.moveTo(-w / 2, i)
-    c.lineTo(w / 2, i)
+    c.moveTo(-maxReach, i)
+    c.lineTo(maxReach, i)
     c.stroke()
   }
 
@@ -139,33 +149,33 @@ const drawManipulator = () => {
   // BACKGROUND: Coordinate Axes
   // -------------------------------------------------------------------------
   c.strokeStyle = '#666'
-  c.lineWidth = 2
-  
+  c.lineWidth = 2 / scale
+
   // X-axis (horizontal)
   c.beginPath()
-  c.moveTo(-w / 2, 0)
-  c.lineTo(w / 2, 0)
+  c.moveTo(-maxReach, 0)
+  c.lineTo(maxReach, 0)
   c.stroke()
-  
+
   // Y-axis (vertical)
   c.beginPath()
-  c.moveTo(0, -h / 2)
-  c.lineTo(0, h / 2)
+  c.moveTo(0, -maxReach)
+  c.lineTo(0, maxReach)
   c.stroke()
 
   // -------------------------------------------------------------------------
   // MANIPULATOR: Base (Origin Point)
   // -------------------------------------------------------------------------
-  c.fillStyle = '#ff6b6b'  // Red
+  c.fillStyle = '#ff6b6b' // Red
   c.beginPath()
-  c.arc(0, 0, 8, 0, Math.PI * 2)
+  c.arc(0, 0, 8 / scale, 0, Math.PI * 2)
   c.fill()
 
   // -------------------------------------------------------------------------
   // MANIPULATOR: Link 1 (Base to Joint 1)
   // -------------------------------------------------------------------------
-  c.strokeStyle = '#4ecdc4'  // Cyan
-  c.lineWidth = 4
+  c.strokeStyle = '#4ecdc4' // Cyan
+  c.lineWidth = 4 / scale
   c.beginPath()
   c.moveTo(0, 0)
   c.lineTo(props.joint1.x, props.joint1.y)
@@ -174,16 +184,16 @@ const drawManipulator = () => {
   // -------------------------------------------------------------------------
   // MANIPULATOR: Joint 1 (Elbow)
   // -------------------------------------------------------------------------
-  c.fillStyle = '#ffe66d'  // Yellow
+  c.fillStyle = '#ffe66d' // Yellow
   c.beginPath()
-  c.arc(props.joint1.x, props.joint1.y, 6, 0, Math.PI * 2)
+  c.arc(props.joint1.x, props.joint1.y, 6 / scale, 0, Math.PI * 2)
   c.fill()
 
   // -------------------------------------------------------------------------
   // MANIPULATOR: Link 2 (Joint 1 to End Effector)
   // -------------------------------------------------------------------------
-  c.strokeStyle = '#95e1d3'  // Light cyan
-  c.lineWidth = 4
+  c.strokeStyle = '#95e1d3' // Light cyan
+  c.lineWidth = 4 / scale
   c.beginPath()
   c.moveTo(props.joint1.x, props.joint1.y)
   c.lineTo(props.endEffector.x, props.endEffector.y)
@@ -192,9 +202,9 @@ const drawManipulator = () => {
   // -------------------------------------------------------------------------
   // MANIPULATOR: End Effector (Tip)
   // -------------------------------------------------------------------------
-  c.fillStyle = '#ff6b6b'  // Red
+  c.fillStyle = '#ff6b6b' // Red
   c.beginPath()
-  c.arc(props.endEffector.x, props.endEffector.y, 8, 0, Math.PI * 2)
+  c.arc(props.endEffector.x, props.endEffector.y, 8 / scale, 0, Math.PI * 2)
   c.fill()
 
   // -------------------------------------------------------------------------
@@ -202,12 +212,12 @@ const drawManipulator = () => {
   // -------------------------------------------------------------------------
   // Shows the boundary of reachable positions (L1 + L2 radius)
   c.strokeStyle = '#444'
-  c.lineWidth = 1
-  c.setLineDash([5, 5])  // Dashed line
+  c.lineWidth = 1 / scale
+  c.setLineDash([5 / scale, 5 / scale]) // Dashed line
   c.beginPath()
-  c.arc(0, 0, props.L1 + props.L2, 0, Math.PI * 2)
+  c.arc(0, 0, workspaceRadius, 0, Math.PI * 2)
   c.stroke()
-  c.setLineDash([])  // Reset to solid line
+  c.setLineDash([]) // Reset to solid line
 
   // Restore original coordinate system
   c.restore()
@@ -243,8 +253,10 @@ watch(() => [props.theta1, props.theta2, props.L1, props.L2], drawManipulator)
 </script>
 
 <template>
-  <!-- Canvas container: fills left side of screen with dark background -->
-  <div class="flex-1 flex items-center justify-center bg-[#0a0a0a] border-r-2 border-[#333]">
+  <!-- Canvas container: fills top/left side of screen with dark background, responsive borders -->
+  <div
+    class="flex-1 flex items-center justify-center bg-[#0a0a0a] border-b-2 md:border-b-0 md:border-r-2 border-[#333] min-h-[50vh] md:min-h-0"
+  >
     <canvas ref="canvas" class="w-full h-full block"></canvas>
   </div>
 </template>

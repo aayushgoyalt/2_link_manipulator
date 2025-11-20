@@ -195,26 +195,26 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- Main container: full screen flex layout with dark theme -->
-  <div class="flex w-screen h-screen bg-[#1a1a1a] text-white">
-    <!-- Left side: Canvas visualization -->
+  <!-- Main container: full screen flex layout with dark theme, stacks vertically on mobile, horizontal on desktop -->
+  <div class="flex flex-col md:flex-row w-screen h-screen bg-[#1a1a1a] text-white overflow-hidden">
+    <!-- Top/Left side: Canvas visualization -->
     <ManipulatorCanvas
       :theta1="theta1"
       :theta2="theta2"
       :L1="L1"
       :L2="L2"
       :joint1="joint1"
-      :endEffector="endEffector"
+      :end-effector="endEffector"
     />
     
-    <!-- Right side: Control panel -->
+    <!-- Bottom/Right side: Control panel -->
     <ManipulatorControls
       :theta1="theta1"
       :theta2="theta2"
       :L1="L1"
       :L2="L2"
-      :endEffector="endEffector"
-      :isMoving="isMoving"
+      :end-effector="endEffector"
+      :is-moving="isMoving"
       @update:theta1="updateTheta1"
       @update:theta2="updateTheta2"
       @update:l1="updateL1"
