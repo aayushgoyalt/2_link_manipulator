@@ -35,6 +35,11 @@ interface Props {
   L2: number // Current second link length
   endEffector: { x: number; y: number } // Current end effector position
   isMoving: boolean // Animation state flag
+  targetX: number // IK target X coordinate
+  targetY: number // IK target Y coordinate
+  elbowUp: boolean // Elbow configuration
+  showTrajectory: boolean // Trajectory visibility
+  isTargetReachable: boolean // Whether target is reachable
 }
 
 defineProps<Props>()
@@ -50,9 +55,15 @@ const emit = defineEmits<{
   'update:theta2': [value: number] // User adjusted θ₂ slider
   'update:L1': [value: number] // User adjusted L₁ slider
   'update:L2': [value: number] // User adjusted L₂ slider
+  'update:targetX': [value: number] // User adjusted IK target X
+  'update:targetY': [value: number] // User adjusted IK target Y
   start: [] // User clicked Start Movement
   stop: [] // User clicked Stop Movement
   reset: [] // User clicked Reset to Default
+  applyIK: [] // User clicked Apply IK
+  toggleElbow: [] // User toggled elbow configuration
+  toggleTrajectory: [] // User toggled trajectory visibility
+  clearTrajectory: [] // User clicked clear trajectory
 }>()
 </script>
 
@@ -181,6 +192,82 @@ const emit = defineEmits<{
       >
         Reset
       </button>
+    </div>
+
+    <div class="flex flex-col gap-2 md:gap-5">
+      <h2 class="text-sm md:text-lg font-semibold m-0 mb-1 md:mb-3 text-white">
+        Inverse Kinematics
+      </h2>
+
+      <div class="flex flex-col gap-1.5 md:gap-2">
+        <label class="flex justify-between items-center text-xs md:text-sm">
+          <span class="text-[#ccc] font-medium">Target X</span>
+          <span class="text-[#4ecdc4] font-semibold font-mono">{{ targetX.toFixed(0) }}</span>
+        </label>
+        <input
+          type="range"
+          :value="targetX"
+          min="-300"
+          max="300"
+          step="5"
+          class="w-full h-1.5 bg-[#333] rounded appearance-none outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-[18px] [&::-webkit-slider-thumb]:h-[18px] [&::-webkit-slider-thumb]:bg-[#ffe66d] [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:transition-all [&::-webkit-slider-thumb]:hover:bg-[#ffd700] [&::-webkit-slider-thumb]:hover:scale-110 [&::-moz-range-thumb]:w-[18px] [&::-moz-range-thumb]:h-[18px] [&::-moz-range-thumb]:bg-[#ffe66d] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:transition-all [&::-moz-range-thumb]:hover:bg-[#ffd700] [&::-moz-range-thumb]:hover:scale-110"
+          @input="emit('update:targetX', Number(($event.target as HTMLInputElement).value))"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1.5 md:gap-2">
+        <label class="flex justify-between items-center text-xs md:text-sm">
+          <span class="text-[#ccc] font-medium">Target Y</span>
+          <span class="text-[#4ecdc4] font-semibold font-mono">{{ targetY.toFixed(0) }}</span>
+        </label>
+        <input
+          type="range"
+          :value="targetY"
+          min="-300"
+          max="300"
+          step="5"
+          class="w-full h-1.5 bg-[#333] rounded appearance-none outline-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-[18px] [&::-webkit-slider-thumb]:h-[18px] [&::-webkit-slider-thumb]:bg-[#ffe66d] [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:transition-all [&::-webkit-slider-thumb]:hover:bg-[#ffd700] [&::-webkit-slider-thumb]:hover:scale-110 [&::-moz-range-thumb]:w-[18px] [&::-moz-range-thumb]:h-[18px] [&::-moz-range-thumb]:bg-[#ffe66d] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:transition-all [&::-moz-range-thumb]:hover:bg-[#ffd700] [&::-moz-range-thumb]:hover:scale-110"
+          @input="emit('update:targetY', Number(($event.target as HTMLInputElement).value))"
+        />
+      </div>
+
+      <div class="flex gap-2">
+        <button
+          class="flex-1 px-2 md:px-4 py-1.5 md:py-2 text-white border-none rounded-md text-xs md:text-sm font-semibold cursor-pointer transition-all"
+          :class="elbowUp ? 'bg-[#ffe66d] text-[#1a1a1a]' : 'bg-[#333] border border-[#555]'"
+          @click="emit('toggleElbow')"
+        >
+          {{ elbowUp ? 'Elbow Up' : 'Elbow Down' }}
+        </button>
+        <button
+          class="flex-1 px-2 md:px-4 py-1.5 md:py-2 text-white border-none rounded-md text-xs md:text-sm font-semibold cursor-pointer transition-all active:scale-[0.98]"
+          :class="isTargetReachable 
+            ? 'bg-[#ffe66d] text-[#1a1a1a] hover:bg-[#ffd700]' 
+            : 'bg-[#ff6b6b] hover:bg-[#ff5252]'"
+          @click="() => { console.log('IK Button clicked!'); emit('applyIK'); }"
+        >
+          {{ isTargetReachable ? 'Apply IK' : 'Unreachable' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-1.5 md:gap-3">
+      <h2 class="text-sm md:text-lg font-semibold m-0 mb-1 md:mb-3 text-white">Trajectory</h2>
+      <div class="flex gap-2">
+        <button
+          class="flex-1 px-2 md:px-4 py-1.5 md:py-2 text-white border-none rounded-md text-xs md:text-sm font-semibold cursor-pointer transition-all"
+          :class="showTrajectory ? 'bg-[#4ecdc4]' : 'bg-[#333] border border-[#555]'"
+          @click="emit('toggleTrajectory')"
+        >
+          {{ showTrajectory ? 'Hide' : 'Show' }}
+        </button>
+        <button
+          class="flex-1 px-2 md:px-4 py-1.5 md:py-2 text-white rounded-md text-xs md:text-sm font-semibold cursor-pointer transition-all bg-[#333] border border-[#555] hover:bg-[#444] active:scale-[0.98]"
+          @click="emit('clearTrajectory')"
+        >
+          Clear
+        </button>
+      </div>
     </div>
   </div>
 </template>

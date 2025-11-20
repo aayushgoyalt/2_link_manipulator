@@ -40,6 +40,10 @@ interface Props {
   L2: number // Second link length in pixels
   joint1: { x: number; y: number } // Calculated joint 1 position
   endEffector: { x: number; y: number } // Calculated end effector position
+  trajectory: Array<{ x: number; y: number }> // Trajectory path history
+  showTrajectory: boolean // Toggle trajectory visibility
+  targetX: number // IK target X coordinate
+  targetY: number // IK target Y coordinate
 }
 
 const props = defineProps<Props>()
@@ -225,6 +229,47 @@ const drawManipulator = () => {
   c.stroke()
   c.setLineDash([]) // Reset to solid line
 
+  // -------------------------------------------------------------------------
+  // TRAJECTORY: Path History
+  // -------------------------------------------------------------------------
+  if (props.showTrajectory && props.trajectory.length > 1) {
+    c.strokeStyle = '#ff6b6b' // Red trail
+    c.lineWidth = 2 / scale
+    c.globalAlpha = 0.6
+    c.beginPath()
+    c.moveTo(props.trajectory[0].x, props.trajectory[0].y)
+    for (let i = 1; i < props.trajectory.length; i++) {
+      c.lineTo(props.trajectory[i].x, props.trajectory[i].y)
+    }
+    c.stroke()
+    c.globalAlpha = 1.0
+  }
+
+  // -------------------------------------------------------------------------
+  // IK TARGET: Target Position Marker
+  // -------------------------------------------------------------------------
+  // Draw crosshair at target position
+  c.strokeStyle = '#ffe66d' // Yellow
+  c.lineWidth = 2 / scale
+  const crossSize = 10 / scale
+
+  // Horizontal line
+  c.beginPath()
+  c.moveTo(props.targetX - crossSize, props.targetY)
+  c.lineTo(props.targetX + crossSize, props.targetY)
+  c.stroke()
+
+  // Vertical line
+  c.beginPath()
+  c.moveTo(props.targetX, props.targetY - crossSize)
+  c.lineTo(props.targetX, props.targetY + crossSize)
+  c.stroke()
+
+  // Circle around target
+  c.beginPath()
+  c.arc(props.targetX, props.targetY, 5 / scale, 0, Math.PI * 2)
+  c.stroke()
+
   // Restore original coordinate system
   c.restore()
 }
@@ -255,7 +300,19 @@ onUnmounted(() => {
  * Watch for parameter changes and redraw
  * Reactive rendering: updates canvas whenever manipulator state changes
  */
-watch(() => [props.theta1, props.theta2, props.L1, props.L2], drawManipulator)
+watch(
+  () => [
+    props.theta1,
+    props.theta2,
+    props.L1,
+    props.L2,
+    props.trajectory.length,
+    props.showTrajectory,
+    props.targetX,
+    props.targetY
+  ],
+  drawManipulator
+)
 </script>
 
 <template>

@@ -23,9 +23,10 @@
 -->
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import ManipulatorCanvas from './ManipulatorCanvas.vue'
 import ManipulatorControls from './ManipulatorControls.vue'
+import { solveIK, verifyIKSolution } from '../utils/inverseKinematics'
 
 // ============================================================================
 // STATE: Joint Angles (in degrees)
@@ -57,17 +58,36 @@ const isMoving = ref(false)
 /** RequestAnimationFrame ID for canceling animation */
 let animationId: number | null = null
 
+/** Trajectory tracking - stores end effector path history */
+const trajectory = ref<Array<{ x: number; y: number }>>([])
+
+/** Toggle trajectory visibility */
+const showTrajectory = ref(true)
+
+/** Target position for inverse kinematics */
+const targetX = ref(100)
+const targetY = ref(100)
+
+/** Elbow configuration for IK (up or down) */
+const elbowUp = ref(true)
+
+/** Check if current target is reachable */
+const isTargetReachable = computed(() => {
+  const distance = Math.sqrt(targetX.value ** 2 + targetY.value ** 2)
+  return distance <= L1.value + L2.value && distance >= Math.abs(L1.value - L2.value)
+})
+
 // ============================================================================
 // COMPUTED: Forward Kinematics Calculations
 // ============================================================================
 
 /**
  * Calculate end effector position using forward kinematics
- * 
+ *
  * Formula:
  * x = L₁·cos(θ₁) + L₂·cos(θ₁ + θ₂)
  * y = L₁·sin(θ₁) + L₂·sin(θ₁ + θ₂)
- * 
+ *
  * @returns {Object} End effector coordinates {x, y}
  */
 const endEffector = computed(() => {
@@ -84,11 +104,11 @@ const endEffector = computed(() => {
 
 /**
  * Calculate joint 1 position (elbow position)
- * 
+ *
  * Formula:
  * x = L₁·cos(θ₁)
  * y = L₁·sin(θ₁)
- * 
+ *
  * @returns {Object} Joint 1 coordinates {x, y}
  */
 const joint1 = computed(() => {
@@ -129,7 +149,7 @@ const updateL2 = (value: number) => {
 
 /**
  * Start automatic animation of the manipulator
- * 
+ *
  * Animation behavior:
  * - θ₁ increments by 1° per frame
  * - θ₂ increments by 0.5° per frame
@@ -185,6 +205,137 @@ const reset = () => {
 // LIFECYCLE: Cleanup
 // ============================================================================
 
+// ============================================================================
+// TRAJECTORY TRACKING
+// ============================================================================
+
+/**
+ * Track end effector position for trajectory visualization
+ * Adds current position to trajectory array when moving
+ */
+watch(endEffector, (newPos) => {
+  if (isMoving.value && showTrajectory.value) {
+    trajectory.value.push({ x: newPos.x, y: newPos.y })
+    // Limit trajectory length to prevent memory issues
+    if (trajectory.value.length > 1000) {
+      trajectory.value.shift()
+    }
+  }
+})
+
+/**
+ * Clear trajectory path
+ */
+const clearTrajectory = () => {
+  trajectory.value = []
+}
+
+/**
+ * Toggle trajectory visibility
+ */
+const toggleTrajectory = () => {
+  showTrajectory.value = !showTrajectory.value
+  if (!showTrajectory.value) {
+    clearTrajectory()
+  }
+}
+
+// ============================================================================
+// INVERSE KINEMATICS
+// ============================================================================
+
+/**
+ * Apply inverse kinematics to reach target position
+ * Calculates joint angles needed to reach (targetX, targetY)
+ */
+const applyIK = () => {
+  console.log('=== Apply IK Button Clicked ===')
+  console.log('Current state:', {
+    targetX: targetX.value,
+    targetY: targetY.value,
+    L1: L1.value,
+    L2: L2.value,
+    elbowUp: elbowUp.value,
+    isReachable: isTargetReachable.value
+  })
+
+  if (!isTargetReachable.value) {
+    console.warn('❌ Target position is unreachable!')
+    const distance = Math.sqrt(targetX.value ** 2 + targetY.value ** 2)
+    console.log(`Distance: ${distance.toFixed(2)}, Max reach: ${L1.value + L2.value}`)
+    return
+  }
+
+  console.log('✓ Target is reachable, solving IK...')
+  const solution = solveIK(targetX.value, targetY.value, L1.value, L2.value, elbowUp.value)
+
+  if (solution.isValid) {
+    console.log('✓ IK Solution found:', solution)
+
+    // Apply the solution
+    theta1.value = solution.theta1
+    theta2.value = solution.theta2
+
+    // Verify the solution (for debugging)
+    const verification = verifyIKSolution(solution.theta1, solution.theta2, L1.value, L2.value)
+    const error = Math.sqrt(
+      Math.pow(verification.x - targetX.value, 2) + Math.pow(verification.y - targetY.value, 2)
+    )
+
+    console.log('✓ IK Applied Successfully!')
+    console.log('Target:', { x: targetX.value, y: targetY.value })
+    console.log('Solution angles:', {
+      theta1: solution.theta1.toFixed(2),
+      theta2: solution.theta2.toFixed(2)
+    })
+    console.log('Verification:', { x: verification.x.toFixed(2), y: verification.y.toFixed(2) })
+    console.log('Error:', error.toFixed(3), 'pixels')
+    console.log('Elbow config:', solution.elbow)
+  } else {
+    console.error('❌ IK solver returned invalid solution')
+  }
+}
+
+/**
+ * Update target X coordinate
+ */
+const updateTargetX = (value: number) => {
+  targetX.value = value
+}
+
+/**
+ * Update target Y coordinate
+ */
+const updateTargetY = (value: number) => {
+  targetY.value = value
+}
+
+/**
+ * Toggle elbow configuration
+ */
+const toggleElbow = () => {
+  elbowUp.value = !elbowUp.value
+}
+
+/**
+ * Test IK with known values
+ */
+const testIK = () => {
+  console.log('=== Testing IK with known values ===')
+
+  // Test 1: Simple case - point straight ahead
+  console.log('Test 1: Point at (200, 0)')
+  targetX.value = 200
+  targetY.value = 0
+  setTimeout(() => applyIK(), 100)
+
+  // Expected: theta1 ≈ 0°, theta2 ≈ 0° (or 180° depending on config)
+}
+
+// ============================================================================
+// LIFECYCLE: Cleanup
+// ============================================================================
+
 /**
  * Component cleanup - stop animation when component is destroyed
  * Prevents memory leaks from running animation frames
@@ -205,8 +356,12 @@ onUnmounted(() => {
       :L2="L2"
       :joint1="joint1"
       :end-effector="endEffector"
+      :trajectory="trajectory"
+      :show-trajectory="showTrajectory"
+      :target-x="targetX"
+      :target-y="targetY"
     />
-    
+
     <!-- Bottom/Right side: Control panel -->
     <ManipulatorControls
       :theta1="theta1"
@@ -215,13 +370,24 @@ onUnmounted(() => {
       :L2="L2"
       :end-effector="endEffector"
       :is-moving="isMoving"
+      :target-x="targetX"
+      :target-y="targetY"
+      :elbow-up="elbowUp"
+      :show-trajectory="showTrajectory"
+      :is-target-reachable="isTargetReachable"
       @update:theta1="updateTheta1"
       @update:theta2="updateTheta2"
       @update:l1="updateL1"
       @update:l2="updateL2"
+      @update:target-x="updateTargetX"
+      @update:target-y="updateTargetY"
       @start="startMovement"
       @stop="stopMovement"
       @reset="reset"
+      @apply-ik="applyIK"
+      @toggle-elbow="toggleElbow"
+      @toggle-trajectory="toggleTrajectory"
+      @clear-trajectory="clearTrajectory"
     />
   </div>
 </template>
