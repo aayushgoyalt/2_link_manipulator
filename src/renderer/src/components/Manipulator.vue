@@ -247,34 +247,37 @@ const toggleTrajectory = () => {
 /**
  * Apply inverse kinematics to reach target position
  * Calculates joint angles needed to reach (targetX, targetY)
+ * Animates smoothly to the target with trajectory tracking
  */
 const applyIK = () => {
-  console.log('=== Apply IK Button Clicked ===')
-  console.log('Current state:', {
-    targetX: targetX.value,
-    targetY: targetY.value,
-    L1: L1.value,
-    L2: L2.value,
-    elbowUp: elbowUp.value,
-    isReachable: isTargetReachable.value
-  })
+  // console.log('=== Apply IK Button Clicked ===')
+  // console.log('Current state:', {
+  //   targetX: targetX.value,
+  //   targetY: targetY.value,
+  //   L1: L1.value,
+  //   L2: L2.value,
+  //   elbowUp: elbowUp.value,
+  //   isReachable: isTargetReachable.value
+  // })
 
   if (!isTargetReachable.value) {
     console.warn('❌ Target position is unreachable!')
     const distance = Math.sqrt(targetX.value ** 2 + targetY.value ** 2)
-    console.log(`Distance: ${distance.toFixed(2)}, Max reach: ${L1.value + L2.value}`)
+    // console.log(`Distance: ${distance.toFixed(2)}, Max reach: ${L1.value + L2.value}`)
     return
   }
 
-  console.log('✓ Target is reachable, solving IK...')
+  // console.log('✓ Target is reachable, solving IK...')
   const solution = solveIK(targetX.value, targetY.value, L1.value, L2.value, elbowUp.value)
 
   if (solution.isValid) {
-    console.log('✓ IK Solution found:', solution)
+    // console.log('✓ IK Solution found:', solution)
 
-    // Apply the solution
-    theta1.value = solution.theta1
-    theta2.value = solution.theta2
+    // Store starting angles
+    const startTheta1 = theta1.value
+    const startTheta2 = theta2.value
+    const targetTheta1 = solution.theta1
+    const targetTheta2 = solution.theta2
 
     // Verify the solution (for debugging)
     const verification = verifyIKSolution(solution.theta1, solution.theta2, L1.value, L2.value)
@@ -282,15 +285,69 @@ const applyIK = () => {
       Math.pow(verification.x - targetX.value, 2) + Math.pow(verification.y - targetY.value, 2)
     )
 
-    console.log('✓ IK Applied Successfully!')
-    console.log('Target:', { x: targetX.value, y: targetY.value })
-    console.log('Solution angles:', {
-      theta1: solution.theta1.toFixed(2),
-      theta2: solution.theta2.toFixed(2)
-    })
-    console.log('Verification:', { x: verification.x.toFixed(2), y: verification.y.toFixed(2) })
-    console.log('Error:', error.toFixed(3), 'pixels')
-    console.log('Elbow config:', solution.elbow)
+    // console.log('✓ IK Applied Successfully!')
+    // console.log('Target:', { x: targetX.value, y: targetY.value })
+    // console.log('Link lengths:', { L1: L1.value, L2: L2.value })
+    // console.log('Solution angles:', {
+    //   theta1: solution.theta1.toFixed(2),
+    //   theta2: solution.theta2.toFixed(2),
+    //   sum: (solution.theta1 + solution.theta2).toFixed(2)
+    // })
+    // console.log('Verification:', { x: verification.x.toFixed(2), y: verification.y.toFixed(2) })
+    // console.log('Error:', error.toFixed(3), 'pixels')
+    // console.log('Elbow config:', solution.elbow)
+    
+    // Manual verification
+    const t1_rad = solution.theta1 * Math.PI / 180
+    const t2_rad = solution.theta2 * Math.PI / 180
+    const manual_x = L1.value * Math.cos(t1_rad) + L2.value * Math.cos(t1_rad + t2_rad)
+    const manual_y = L1.value * Math.sin(t1_rad) + L2.value * Math.sin(t1_rad + t2_rad)
+    // console.log('Manual FK check:', { x: manual_x.toFixed(2), y: manual_y.toFixed(2) })
+
+    // Animate smoothly to target with trajectory
+    const duration = 1000 // 1 second animation
+    const startTime = Date.now()
+    
+    // Clear any existing animation
+    if (animationId !== null) {
+      cancelAnimationFrame(animationId)
+    }
+    
+    // Enable trajectory tracking during IK movement
+    const wasShowingTrajectory = showTrajectory.value
+    showTrajectory.value = true
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      
+      // Ease-in-out function for smooth motion
+      const eased = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2
+
+      // Interpolate angles
+      theta1.value = startTheta1 + (targetTheta1 - startTheta1) * eased
+      theta2.value = startTheta2 + (targetTheta2 - startTheta2) * eased
+
+      if (progress < 1) {
+        animationId = requestAnimationFrame(animate)
+      } else {
+        // Ensure we end exactly at target
+        theta1.value = targetTheta1
+        theta2.value = targetTheta2
+        animationId = null
+        
+        // Restore trajectory setting
+        if (!wasShowingTrajectory) {
+          showTrajectory.value = false
+        }
+        
+        // console.log('✓ Animation complete')
+      }
+    }
+
+    animationId = requestAnimationFrame(animate)
   } else {
     console.error('❌ IK solver returned invalid solution')
   }
@@ -321,10 +378,10 @@ const toggleElbow = () => {
  * Test IK with known values
  */
 const testIK = () => {
-  console.log('=== Testing IK with known values ===')
+  // console.log('=== Testing IK with known values ===')
 
   // Test 1: Simple case - point straight ahead
-  console.log('Test 1: Point at (200, 0)')
+  // console.log('Test 1: Point at (200, 0)')
   targetX.value = 200
   targetY.value = 0
   setTimeout(() => applyIK(), 100)

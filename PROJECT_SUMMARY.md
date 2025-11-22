@@ -7,9 +7,12 @@
 - Visualizes a 2-link robotic arm in real-time
 - Allows interactive control of joint angles (θ₁, θ₂) and link lengths (L₁, L₂)
 - Calculates forward kinematics to determine end effector position
+- **Solves inverse kinematics to reach target positions**
+- **Tracks and visualizes end effector trajectory path**
 - Provides automatic animation mode
 - Shows workspace boundary (maximum reach)
 - Displays coordinate grid and axes for spatial reference
+- **Supports elbow up/down configurations for IK solutions**
 
 ## Technology
 - **Desktop App**: Electron 28 + Vue 3 + TypeScript
@@ -54,17 +57,41 @@ Joint 1: (L₁·cos(θ₁), L₁·sin(θ₁))
 End Effector: (L₁·cos(θ₁) + L₂·cos(θ₁+θ₂), L₁·sin(θ₁) + L₂·sin(θ₁+θ₂))
 ```
 
+### Inverse Kinematics ✨ NEW
+Calculates joint angles needed to reach a target position:
+```
+Given target (x, y), solve for (θ₁, θ₂):
+- Uses geometric method with law of cosines
+- Validates reachability (|L₁ - L₂| ≤ distance ≤ L₁ + L₂)
+- Provides two solutions: elbow up and elbow down
+- Verifies solution accuracy using forward kinematics
+```
+
+### Trajectory Tracking ✨ NEW
+Visual path history showing where the end effector has been:
+- Records up to 1000 position points
+- Smooth continuous line with 60% opacity
+- Toggle show/hide functionality
+- Clear button to reset path
+- Automatically tracks during animation and IK movements
+
 ### Interactive Controls
 - Joint angles: -180° to 180° (1° steps)
 - Link lengths: 50px to 250px (5px steps)
+- **IK target position: -300 to 300 (5px steps)**
+- **Elbow configuration toggle (up/down)**
 - Real-time value display
 - Animation controls (start/stop/reset)
+- **Trajectory controls (show/hide/clear)**
 
 ### Visualization
 - Color-coded components (base, links, joints, end effector)
 - Grid background (50px spacing)
 - Coordinate axes (X and Y)
 - Workspace boundary circle
+- **IK target marker (yellow crosshair)**
+- **Trajectory path (red trail)**
+- **Auto-scaling to fit workspace**
 - Dark theme for reduced eye strain
 
 ## File Structure
@@ -77,10 +104,12 @@ src/
     └── src/
         ├── main.ts            # Vue initialization
         ├── App.vue            # Root component
-        └── components/
-            ├── Manipulator.vue        # State management
-            ├── ManipulatorCanvas.vue  # Canvas rendering
-            └── ManipulatorControls.vue # UI controls
+        ├── components/
+        │   ├── Manipulator.vue        # State management
+        │   ├── ManipulatorCanvas.vue  # Canvas rendering
+        │   └── ManipulatorControls.vue # UI controls
+        └── utils/
+            └── inverseKinematics.ts   # IK solver algorithms
 ```
 
 ## Development Workflow
@@ -115,10 +144,15 @@ npm run format       # Prettier
 - `L1`: First link length (default: 150px)
 - `L2`: Second link length (default: 100px)
 - `isMoving`: Animation state flag
+- **`trajectory`: Array of end effector positions (up to 1000 points)**
+- **`showTrajectory`: Trajectory visibility toggle**
+- **`targetX`, `targetY`: IK target position**
+- **`elbowUp`: Elbow configuration for IK (up/down)**
 
 ### Derived State (Computed)
 - `joint1`: Elbow position from forward kinematics
 - `endEffector`: Tip position from forward kinematics
+- **`isTargetReachable`: Whether IK target is within workspace**
 
 ### Data Flow
 ```
@@ -163,6 +197,8 @@ User Input → Controls → Events → Manipulator → State Update
 - Link 1: `#4ecdc4` (cyan)
 - Joint 1: `#ffe66d` (yellow)
 - Link 2: `#95e1d3` (light cyan)
+- **IK Target: `#ffe66d` (yellow crosshair)**
+- **Trajectory: `#ff6b6b` (red trail, 60% opacity)**
 
 ## Deployment Options
 
@@ -243,21 +279,26 @@ User Input → Controls → Events → Manipulator → State Update
 ## Future Enhancements
 
 ### Potential Features
-- Inverse kinematics solver
-- Path planning visualization
+- ~~Inverse kinematics solver~~ ✅ Implemented
+- ~~Trajectory tracking~~ ✅ Implemented
+- Path planning with waypoints
+- Smooth interpolation for IK movements
 - 3D visualization option
 - Multiple manipulator configurations
 - Export/import configurations
 - Preset positions library
 - Velocity/acceleration display
 - Workspace analysis tools
+- Obstacle avoidance
 
 ### Technical Improvements
-- Add automated tests
+- Add automated tests (unit tests for IK solver)
 - Implement state persistence
 - Add accessibility features
 - Optimize for large displays
 - Add error boundaries
+- Add input validation for IK targets
+- Improve trajectory performance for long paths
 
 ## Dependencies
 
@@ -314,6 +355,26 @@ npm run preview:web      # Preview web build
 
 ---
 
-**Version**: 1.0.0  
+## Recent Updates (v1.1.0)
+
+### New Features
+- **Inverse Kinematics Solver**: Calculate joint angles to reach target positions
+- **Trajectory Tracking**: Visual path history of end effector movement
+- **Elbow Configuration**: Control IK solution (up/down)
+- **Enhanced Visualization**: Target markers and trajectory paths
+- **Auto-scaling Canvas**: Automatically fits workspace with padding
+
+### Implementation
+- New utility module: `src/renderer/src/utils/inverseKinematics.ts`
+- Algorithm: Geometric method with law of cosines
+- Validation: Reachability checking and solution verification
+- UI: New control sections for IK targets and trajectory
+
+### Testing
+See [TESTING.md](TESTING.md) for comprehensive testing guide.
+
+---
+
+**Version**: 1.1.0  
 **Last Updated**: 2024  
 **Status**: Production Ready

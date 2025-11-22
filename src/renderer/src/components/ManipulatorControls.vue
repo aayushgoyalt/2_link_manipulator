@@ -60,10 +60,10 @@ const emit = defineEmits<{
   start: [] // User clicked Start Movement
   stop: [] // User clicked Stop Movement
   reset: [] // User clicked Reset to Default
-  applyIK: [] // User clicked Apply IK
-  toggleElbow: [] // User toggled elbow configuration
-  toggleTrajectory: [] // User toggled trajectory visibility
-  clearTrajectory: [] // User clicked clear trajectory
+  'apply-ik': [] // User clicked Apply IK
+  'toggle-elbow': [] // User toggled elbow configuration
+  'toggle-trajectory': [] // User toggled trajectory visibility
+  'clear-trajectory': [] // User clicked clear trajectory
 }>()
 </script>
 
@@ -235,7 +235,7 @@ const emit = defineEmits<{
         <button
           class="flex-1 px-2 md:px-4 py-1.5 md:py-2 text-white border-none rounded-md text-xs md:text-sm font-semibold cursor-pointer transition-all"
           :class="elbowUp ? 'bg-[#ffe66d] text-[#1a1a1a]' : 'bg-[#333] border border-[#555]'"
-          @click="emit('toggleElbow')"
+          @click="emit('toggle-elbow')"
         >
           {{ elbowUp ? 'Elbow Up' : 'Elbow Down' }}
         </button>
@@ -244,7 +244,7 @@ const emit = defineEmits<{
           :class="isTargetReachable 
             ? 'bg-[#ffe66d] text-[#1a1a1a] hover:bg-[#ffd700]' 
             : 'bg-[#ff6b6b] hover:bg-[#ff5252]'"
-          @click="() => { console.log('IK Button clicked!'); emit('applyIK'); }"
+          @click="emit('apply-ik')"
         >
           {{ isTargetReachable ? 'Apply IK' : 'Unreachable' }}
         </button>
@@ -257,13 +257,13 @@ const emit = defineEmits<{
         <button
           class="flex-1 px-2 md:px-4 py-1.5 md:py-2 text-white border-none rounded-md text-xs md:text-sm font-semibold cursor-pointer transition-all"
           :class="showTrajectory ? 'bg-[#4ecdc4]' : 'bg-[#333] border border-[#555]'"
-          @click="emit('toggleTrajectory')"
+          @click="emit('toggle-trajectory')"
         >
           {{ showTrajectory ? 'Hide' : 'Show' }}
         </button>
         <button
           class="flex-1 px-2 md:px-4 py-1.5 md:py-2 text-white rounded-md text-xs md:text-sm font-semibold cursor-pointer transition-all bg-[#333] border border-[#555] hover:bg-[#444] active:scale-[0.98]"
-          @click="emit('clearTrajectory')"
+          @click="emit('clear-trajectory')"
         >
           Clear
         </button>

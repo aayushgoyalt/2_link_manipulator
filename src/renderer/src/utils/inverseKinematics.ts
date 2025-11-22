@@ -12,22 +12,36 @@
  * y = L₁·sin(θ₁) + L₂·sin(θ₁ + θ₂)
  */
 
+// inverseKinematics.ts
 export interface IKSolution {
-  theta1: number  // First joint angle in degrees
-  theta2: number  // Second joint angle in degrees
-  isValid: boolean // Whether the target is reachable
-  elbow: 'up' | 'down' // Elbow configuration
+  theta1: number   // degrees, normalized to [-180, 180]
+  theta2: number   // degrees, normalized to [-180, 180]
+  isValid: boolean
+  elbow: 'up' | 'down'
+}
+
+/** small epsilon for numerical stability */
+const EPS = 1e-6
+
+const degToRad = (d: number) => (d * Math.PI) / 180
+const radToDeg = (r: number) => (r * 180) / Math.PI
+
+/** Normalize angle in degrees to [-180, 180] */
+export function normalizeAngleDeg(angle: number): number {
+  let a = ((angle + 180) % 360 + 360) % 360 - 180
+  // convert -0 to +0
+  if (Math.abs(a) < EPS) return 0
+  return a
 }
 
 /**
  * Solve inverse kinematics for 2-link manipulator
- * 
- * @param targetX - Desired X coordinate
- * @param targetY - Desired Y coordinate
- * @param L1 - Length of first link
- * @param L2 - Length of second link
- * @param elbowUp - Elbow configuration (true = up, false = down)
- * @returns IK solution with joint angles
+ *
+ * @param targetX desired x (same units as L1/L2)
+ * @param targetY desired y
+ * @param L1 link 1 length (must be > 0)
+ * @param L2 link 2 length (must be > 0)
+ * @param elbowUp true => elbow-up solution, false => elbow-down
  */
 export function solveIK(
   targetX: number,
@@ -36,15 +50,17 @@ export function solveIK(
   L2: number,
   elbowUp: boolean = true
 ): IKSolution {
-  // Calculate distance to target
-  const distance = Math.sqrt(targetX * targetX + targetY * targetY)
-  
-  // Check if target is reachable
-  // Target must be within workspace: |L1 - L2| <= distance <= L1 + L2
+  if (L1 <= 0 || L2 <= 0) {
+    throw new Error('L1 and L2 must be positive')
+  }
+
+  const distance = Math.hypot(targetX, targetY)
+
   const minReach = Math.abs(L1 - L2)
   const maxReach = L1 + L2
-  
-  if (distance > maxReach || distance < minReach || distance < 0.001) {
+
+  // unreachable or ambiguous (very close to zero)
+  if (distance > maxReach + EPS || distance < minReach - EPS || distance < EPS) {
     return {
       theta1: 0,
       theta2: 0,
@@ -52,30 +68,25 @@ export function solveIK(
       elbow: elbowUp ? 'up' : 'down'
     }
   }
+
+  // Law of cosines gives us the angle BETWEEN the two links
+  // But we need the relative angle for forward kinematics
+  const cosAngleBetween = (L1 * L1 + L2 * L2 - distance * distance) / (2 * L1 * L2)
+  const clampedCos = Math.max(-1, Math.min(1, cosAngleBetween))
+  const angleBetween = Math.acos(clampedCos)
   
-  // Calculate θ₂ using law of cosines
-  // In triangle formed by L1, L2, and distance to target:
-  // cos(θ₂) = (L₁² + L₂² - distance²) / (2·L₁·L₂)
-  const cosTheta2 = (L1 * L1 + L2 * L2 - distance * distance) / (2 * L1 * L2)
-  
-  // Clamp to valid range to handle floating point errors
-  const clampedCos = Math.max(-1, Math.min(1, cosTheta2))
-  
-  // Two solutions: elbow up (positive) or elbow down (negative)
-  const theta2Rad = elbowUp 
-    ? Math.acos(clampedCos)
-    : -Math.acos(clampedCos)
-  
-  // Calculate θ₁ using geometry
-  // θ₁ = atan2(y, x) - atan2(L₂·sin(θ₂), L₁ + L₂·cos(θ₂))
-  const alpha = Math.atan2(targetY, targetX)
+  // Convert to relative angle: theta2 = π - angleBetween for elbow up
+  // theta2 = -(π - angleBetween) for elbow down
+  const theta2Rad = elbowUp ? (Math.PI - angleBetween) : -(Math.PI - angleBetween)
+
+  // geometry for theta1
+  const alpha = Math.atan2(targetY, targetX) // angle to target
   const beta = Math.atan2(L2 * Math.sin(theta2Rad), L1 + L2 * Math.cos(theta2Rad))
   const theta1Rad = alpha - beta
-  
-  // Convert to degrees
-  const theta1Deg = (theta1Rad * 180) / Math.PI
-  const theta2Deg = (theta2Rad * 180) / Math.PI
-  
+
+  const theta1Deg = normalizeAngleDeg(radToDeg(theta1Rad))
+  const theta2Deg = normalizeAngleDeg(radToDeg(theta2Rad))
+
   return {
     theta1: theta1Deg,
     theta2: theta2Deg,
@@ -84,35 +95,29 @@ export function solveIK(
   }
 }
 
-/**
- * Check if a target position is reachable
- */
+/** Reachability helper */
 export function isReachable(
   targetX: number,
   targetY: number,
   L1: number,
   L2: number
 ): boolean {
-  const distance = Math.sqrt(targetX * targetX + targetY * targetY)
+  const d = Math.hypot(targetX, targetY)
   const minReach = Math.abs(L1 - L2)
   const maxReach = L1 + L2
-  return distance <= maxReach && distance >= minReach && distance > 0.001
+  return d <= maxReach + EPS && d >= minReach - EPS && d > EPS
 }
 
-/**
- * Verify IK solution by computing forward kinematics
- */
+/** Verify by forward kinematics (angles in degrees) */
 export function verifyIKSolution(
   theta1: number,
   theta2: number,
   L1: number,
   L2: number
 ): { x: number; y: number } {
-  const t1 = (theta1 * Math.PI) / 180
-  const t2 = (theta2 * Math.PI) / 180
-  
+  const t1 = degToRad(theta1)
+  const t2 = degToRad(theta2)
   const x = L1 * Math.cos(t1) + L2 * Math.cos(t1 + t2)
   const y = L1 * Math.sin(t1) + L2 * Math.sin(t1 + t2)
-  
   return { x, y }
 }
