@@ -26,7 +26,7 @@
 import { ref, computed, onUnmounted, watch } from 'vue'
 import ManipulatorCanvas from './ManipulatorCanvas.vue'
 import ManipulatorControls from './ManipulatorControls.vue'
-import { solveIK, verifyIKSolution } from '../utils/inverseKinematics'
+import { solveIK } from '../utils/inverseKinematics'
 
 // ============================================================================
 // STATE: Joint Angles (in degrees)
