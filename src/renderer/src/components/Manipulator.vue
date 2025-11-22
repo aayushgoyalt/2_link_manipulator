@@ -55,6 +55,9 @@ const L2 = ref(100)
 /** Flag indicating if automatic animation is running */
 const isMoving = ref(false)
 
+/** Flag indicating if IK animation is running */
+const isIKAnimating = ref(false)
+
 /** RequestAnimationFrame ID for canceling animation */
 let animationId: number | null = null
 
@@ -211,10 +214,10 @@ const reset = () => {
 
 /**
  * Track end effector position for trajectory visualization
- * Adds current position to trajectory array when moving
+ * Adds current position to trajectory array when moving or during IK animation
  */
 watch(endEffector, (newPos) => {
-  if (isMoving.value && showTrajectory.value) {
+  if ((isMoving.value || isIKAnimating.value) && showTrajectory.value) {
     trajectory.value.push({ x: newPos.x, y: newPos.y })
     // Limit trajectory length to prevent memory issues
     if (trajectory.value.length > 1000) {
@@ -304,39 +307,52 @@ const applyIK = () => {
     const manual_y = L1.value * Math.sin(t1_rad) + L2.value * Math.sin(t1_rad + t2_rad)
     // console.log('Manual FK check:', { x: manual_x.toFixed(2), y: manual_y.toFixed(2) })
 
-    // Animate smoothly to target with trajectory
-    const duration = 1000 // 1 second animation
-    const startTime = Date.now()
+    // Animate to target using same speed as regular animation
+    // Regular animation: theta1 += 1°/frame, theta2 += 0.5°/frame at 60fps
+    // Calculate angular distances
+    const deltaTheta1 = targetTheta1 - startTheta1
+    const deltaTheta2 = targetTheta2 - startTheta2
+    
+    // Use the larger angular change to determine speed
+    // This ensures smooth motion at consistent speed
+    const maxDelta = Math.max(Math.abs(deltaTheta1), Math.abs(deltaTheta2))
+    
+    // Speed: 1° per frame at 60fps = 60°/second
+    const degreesPerFrame = 1.0
+    const framesNeeded = Math.ceil(maxDelta / degreesPerFrame)
+    
+    // Calculate increments per frame to reach target in calculated frames
+    const theta1Increment = deltaTheta1 / framesNeeded
+    const theta2Increment = deltaTheta2 / framesNeeded
+    
+    let frameCount = 0
     
     // Clear any existing animation
     if (animationId !== null) {
       cancelAnimationFrame(animationId)
+      isMoving.value = false
     }
     
     // Enable trajectory tracking during IK movement
     const wasShowingTrajectory = showTrajectory.value
     showTrajectory.value = true
+    isIKAnimating.value = true
 
     const animate = () => {
-      const elapsed = Date.now() - startTime
-      const progress = Math.min(elapsed / duration, 1)
+      frameCount++
       
-      // Ease-in-out function for smooth motion
-      const eased = progress < 0.5
-        ? 2 * progress * progress
-        : 1 - Math.pow(-2 * progress + 2, 2) / 2
-
-      // Interpolate angles
-      theta1.value = startTheta1 + (targetTheta1 - startTheta1) * eased
-      theta2.value = startTheta2 + (targetTheta2 - startTheta2) * eased
-
-      if (progress < 1) {
+      if (frameCount < framesNeeded) {
+        // Increment angles at constant speed
+        theta1.value += theta1Increment
+        theta2.value += theta2Increment
+        
         animationId = requestAnimationFrame(animate)
       } else {
         // Ensure we end exactly at target
         theta1.value = targetTheta1
         theta2.value = targetTheta2
         animationId = null
+        isIKAnimating.value = false
         
         // Restore trajectory setting
         if (!wasShowingTrajectory) {
