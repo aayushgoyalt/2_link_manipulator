@@ -265,7 +265,7 @@ const applyIK = () => {
 
   if (!isTargetReachable.value) {
     console.warn('❌ Target position is unreachable!')
-    const distance = Math.sqrt(targetX.value ** 2 + targetY.value ** 2)
+    // const distance = Math.sqrt(targetX.value ** 2 + targetY.value ** 2)
     // console.log(`Distance: ${distance.toFixed(2)}, Max reach: ${L1.value + L2.value}`)
     return
   }
@@ -283,10 +283,10 @@ const applyIK = () => {
     const targetTheta2 = solution.theta2
 
     // Verify the solution (for debugging)
-    const verification = verifyIKSolution(solution.theta1, solution.theta2, L1.value, L2.value)
-    const error = Math.sqrt(
-      Math.pow(verification.x - targetX.value, 2) + Math.pow(verification.y - targetY.value, 2)
-    )
+    // const verification = verifyIKSolution(solution.theta1, solution.theta2, L1.value, L2.value)
+    // const error = Math.sqrt(
+    //   Math.pow(verification.x - targetX.value, 2) + Math.pow(verification.y - targetY.value, 2)
+    // )
 
     // console.log('✓ IK Applied Successfully!')
     // console.log('Target:', { x: targetX.value, y: targetY.value })
@@ -301,10 +301,10 @@ const applyIK = () => {
     // console.log('Elbow config:', solution.elbow)
     
     // Manual verification
-    const t1_rad = solution.theta1 * Math.PI / 180
-    const t2_rad = solution.theta2 * Math.PI / 180
-    const manual_x = L1.value * Math.cos(t1_rad) + L2.value * Math.cos(t1_rad + t2_rad)
-    const manual_y = L1.value * Math.sin(t1_rad) + L2.value * Math.sin(t1_rad + t2_rad)
+    // const t1_rad = solution.theta1 * Math.PI / 180
+    // const t2_rad = solution.theta2 * Math.PI / 180
+    // const manual_x = L1.value * Math.cos(t1_rad) + L2.value * Math.cos(t1_rad + t2_rad)
+    // const manual_y = L1.value * Math.sin(t1_rad) + L2.value * Math.sin(t1_rad + t2_rad)
     // console.log('Manual FK check:', { x: manual_x.toFixed(2), y: manual_y.toFixed(2) })
 
     // Animate to target using same speed as regular animation
@@ -393,17 +393,17 @@ const toggleElbow = () => {
 /**
  * Test IK with known values
  */
-const testIK = () => {
-  // console.log('=== Testing IK with known values ===')
+// const testIK = () => {
+//   // console.log('=== Testing IK with known values ===')
 
-  // Test 1: Simple case - point straight ahead
-  // console.log('Test 1: Point at (200, 0)')
-  targetX.value = 200
-  targetY.value = 0
-  setTimeout(() => applyIK(), 100)
+//   // Test 1: Simple case - point straight ahead
+//   // console.log('Test 1: Point at (200, 0)')
+//   targetX.value = 200
+//   targetY.value = 0
+//   setTimeout(() => applyIK(), 100)
 
-  // Expected: theta1 ≈ 0°, theta2 ≈ 0° (or 180° depending on config)
-}
+//   // Expected: theta1 ≈ 0°, theta2 ≈ 0° (or 180° depending on config)
+// }
 
 // ============================================================================
 // LIFECYCLE: Cleanup
